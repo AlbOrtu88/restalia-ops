@@ -110,8 +110,13 @@ async function frontend(req, env, url) {
   if (req.method !== 'GET' && req.method !== 'HEAD') return new Response('Método no permitido', { status: 405 });
   const origin = (env.FRONTEND_ORIGIN || '').replace(/\/+$/, '');
   if (!origin) return new Response('Sin frontend configurado', { status: 404 });
-  const r = await fetch(origin + url.pathname + url.search, { headers: { 'User-Agent': 'restalia-ops-worker' }, cf: { cacheTtl: 60 } });
+  const path = url.pathname.endsWith('/') && /raw\.githubusercontent\.com/.test(origin) ? url.pathname + 'index.html' : url.pathname;
+  const r = await fetch(origin + path + url.search, { headers: { 'User-Agent': 'restalia-ops-worker' }, cf: { cacheTtl: 60 } });
   const h = new Headers(r.headers);
+  // En desarrollo el frontend puede venir de raw.githubusercontent.com (rama de trabajo), que sirve todo como texto.
+  const TYPES = { js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', html: 'text/html; charset=utf-8', json: 'application/json', webmanifest: 'application/manifest+json', png: 'image/png', svg: 'image/svg+xml' };
+  const ext = url.pathname.endsWith('/') ? 'html' : (url.pathname.split('.').pop() || '').toLowerCase();
+  if (/raw\.githubusercontent\.com/.test(origin) && TYPES[ext]) h.set('Content-Type', TYPES[ext]);
   ['set-cookie', 'x-github-request-id', 'x-fastly-request-id', 'via', 'x-served-by', 'x-cache', 'x-cache-hits', 'x-timer', 'access-control-allow-origin'].forEach((k) => h.delete(k));
   h.set('X-Content-Type-Options', 'nosniff');
   h.set('Referrer-Policy', 'strict-origin-when-cross-origin');
