@@ -1,6 +1,8 @@
 # Restalia Operations AI · Arquitectura, limitaciones y backend necesario
 
-Versión 0.1 (primera entrega navegable). Fecha: 16/11/2026.
+Versión 0.2 (backend conectado). Fecha: 17/11/2026. Detalle operativo del backend en [backend.md](backend.md).
+
+> **Novedad 0.2**: el backend ya existe (Cloudflare Worker en `worker/`). La app conectada se abre en https://restalia-ops.hola-0d4.workers.dev y sincroniza Notion y Microsoft 365 sin importar archivos. Las secciones 1 a 3 describen el modo sin conexión, que sigue disponible en GitHub Pages.
 
 ## 1. Qué es hoy
 
@@ -50,7 +52,7 @@ iPhone / ordenador (PWA)
  └─ Adaptadores (js/adapters/*): notion · graph · ai · storage · notifications
           │  HTTPS + cookie de sesión (nunca tokens en el navegador)
           ▼
- Backend seguro (BFF) — por construir
+ Backend seguro (BFF) — Cloudflare Worker (worker/), mismo dominio que la app conectada
  ├─ /auth (Microsoft Entra ID, OAuth 2.0 + PKCE)
  ├─ /notion/:coleccion  (lectura; escritura solo desde /approvals/execute)
  ├─ /graph/mail · /graph/calendar · /graph/teams/messages · /graph/files
