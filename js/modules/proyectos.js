@@ -11,7 +11,7 @@ const st = { estado: 'activos' };
 function metrics(p) {
   const t = store.all('tareas').filter((x) => x.proyectoId === p.id);
   const done = t.filter((x) => x.estado === 'Hecha').length;
-  const venc = t.filter((x) => isOverdue(x.limite, x.estado === 'Hecha')).length;
+  const venc = t.filter((x) => isOverdue(x.limite, ['Hecha', 'Cancelada'].includes(x.estado))).length;
   const pct = t.length ? Math.round((done / t.length) * 100) : (p.estado === 'Completado' ? 100 : 0);
   return { tareas: t, total: t.length, done, venc, pct };
 }
@@ -84,7 +84,7 @@ function detail(view, id) {
   if (!p) { view.innerHTML = empty('Proyecto no encontrado.', 'target'); return; }
   const m = metrics(p);
   const convs = store.ai.conversations().filter((c) => c.projectId === p.id);
-  const tasks = m.tareas.slice().sort((a, b) => (a.estado === 'Hecha') - (b.estado === 'Hecha') || toDate(a.limite || 8.64e15) - toDate(b.limite || 8.64e15));
+  const tasks = m.tareas.slice().sort((a, b) => (['Hecha', 'Cancelada'].includes(a.estado)) - (['Hecha', 'Cancelada'].includes(b.estado)) || toDate(a.limite || 8.64e15) - toDate(b.limite || 8.64e15));
   const locs = [...new Set(m.tareas.map((t) => t.localId).filter(Boolean))];
   view.innerHTML = `
     <a class="btn ghost sm" href="#/proyectos" style="margin:6px 0 4px 0">${icon('left', 'sm')}Proyectos</a>
@@ -100,10 +100,10 @@ function detail(view, id) {
       <div class="card"><div class="card-h"><h3>Tareas del proyecto</h3><a class="btn ghost sm" href="#/tareas">Todas ${icon('right', 'sm')}</a></div>
         <div class="list">${tasks.map((t) => `
           <div class="li" data-task="${t.id}" style="cursor:pointer">
-            <button class="btn ghost icon sm" data-done="${t.id}" aria-label="${t.estado === 'Hecha' ? 'Reabrir' : 'Marcar como hecha'}" style="color:${t.estado === 'Hecha' ? 'var(--green)' : 'var(--text-3)'}">${icon(t.estado === 'Hecha' ? 'checksq' : 'check')}</button>
-            <div class="li-main"><div class="li-title" style="${t.estado === 'Hecha' ? 'text-decoration:line-through;color:var(--text-3)' : ''}">${esc(t.titulo)} ${demoBadge(t)}</div>
+            <button class="btn ghost icon sm" data-done="${t.id}" aria-label="${['Hecha', 'Cancelada'].includes(t.estado) ? 'Reabrir' : 'Marcar como hecha'}" style="color:${['Hecha', 'Cancelada'].includes(t.estado) ? 'var(--green)' : 'var(--text-3)'}">${icon(['Hecha', 'Cancelada'].includes(t.estado) ? 'checksq' : 'check')}</button>
+            <div class="li-main"><div class="li-title" style="${['Hecha', 'Cancelada'].includes(t.estado) ? 'text-decoration:line-through;color:var(--text-3)' : ''}">${esc(t.titulo)} ${demoBadge(t)}</div>
             <div class="li-sub">${esc(t.responsable)} · ${t.limite ? fmtDate(t.limite) : 'sin fecha'}${t.localId ? ` · ${esc(store.localName(t.localId))}` : ''}</div></div>
-            ${isOverdue(t.limite, t.estado === 'Hecha') ? badge('Vencida', 'red') : badge(t.estado)}
+            ${isOverdue(t.limite, ['Hecha', 'Cancelada'].includes(t.estado)) ? badge('Vencida', 'red') : badge(t.estado)}
           </div>`).join('') || empty('Sin tareas. Añade la primera.', 'checksq')}</div></div>
       <div class="stack" style="gap:16px">
         <div class="card"><div class="card-h"><h3>Asistente</h3></div><div class="card-b">
@@ -118,7 +118,7 @@ function detail(view, id) {
   $('[data-edit]').addEventListener('click', () => projectForm(p, reload));
   $('[data-addtask]').addEventListener('click', () => openTaskForm({ proyectoId: p.id }, { onSaved: reload }));
   $('[data-conv]').addEventListener('click', () => { const c = store.ai.create(`Proyecto: ${p.nombre}`.slice(0, 50), p.id); location.hash = `#/asistente/${c.id}`; });
-  on(view, 'click', '[data-done]', (e, b) => { e.stopPropagation(); const t = store.find('tareas', b.dataset.done); store.update('tareas', t.id, { estado: t.estado === 'Hecha' ? 'Pendiente' : 'Hecha' }); if (t.estado !== 'Hecha') store.log(`Alberto completó «${t.titulo}»`, 'tareas'); reload(); });
+  on(view, 'click', '[data-done]', (e, b) => { e.stopPropagation(); const t = store.find('tareas', b.dataset.done); store.update('tareas', t.id, { estado: ['Hecha', 'Cancelada'].includes(t.estado) ? 'Pendiente' : 'Hecha' }); if (!['Hecha', 'Cancelada'].includes(t.estado)) store.log(`Alberto completó «${t.titulo}»`, 'tareas'); reload(); });
   on(view, 'click', '[data-task]', (e, el) => { if (e.target.closest('[data-done]')) return; openTaskForm(store.find('tareas', el.dataset.task), { onSaved: reload }); });
 }
 

@@ -6,7 +6,7 @@ import { esc, fmtDateTime, relTime, toDate } from '../core/utils.js';
 import { request, backendConfigured, NotConnectedError } from '../adapters/backend.js';
 
 const SYS = { Notion: { ic: 'db', c: '' }, Outlook: { ic: 'mail', c: 'blue' }, Teams: { ic: 'teams', c: 'purple' } };
-const COLOR = { 'Pendiente': 'amber', 'En cola (sin conexión)': 'blue', 'Ejecutada': 'green', 'Rechazada': 'red', 'Error': 'red' };
+const COLOR = { 'Pendiente (Notion)': 'amber', 'Aprobado': 'green', 'Rechazado': 'red', 'Pendiente': 'amber', 'En cola (sin conexión)': 'blue', 'Ejecutada': 'green', 'Rechazada': 'red', 'Error': 'red' };
 const st = { tab: 'pendientes' };
 const COL_HREF = { visitas: 'visitas', incidencias: 'incidencias', mensajes: 'comunicaciones', tareas: 'tareas', auditorias: 'auditorias' };
 
@@ -23,7 +23,7 @@ async function approve(a) {
   if (!ok) return;
   const hist = [...(a.historial || []), histEntry('Aprobada')];
   try {
-    const r = await request('/approvals/execute', { method: 'POST', body: { id: a.id, sistema: a.sistema, accion: a.accion, datos: a.datos, ref: a.ref || null }, system: a.sistema });
+    const r = await request('/approvals/execute', { method: 'POST', body: { id: a.id, sistema: a.sistema, accion: a.accion, datos: a.datos, ref: a.ref || null, op: a.op || null }, system: a.sistema });
     store.update('aprobaciones', a.id, { estado: 'Ejecutada', historial: [...hist, histEntry('Ejecutada', r?.ref ? `Ref. ${r.ref}` : '')], resuelta: new Date().toISOString() });
     toast(`Ejecutada en ${a.sistema}`);
   } catch (e) {

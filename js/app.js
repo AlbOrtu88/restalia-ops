@@ -2,7 +2,9 @@
 import * as store from './core/store.js';
 import { icon, openSheet, toast, on, closeAllSheets } from './core/ui.js';
 import { t, setLang } from './core/i18n.js';
-import { isOverdue } from './core/utils.js';
+import { isOverdue, relTime } from './core/utils.js';
+import * as sync from './core/sync.js';
+import { backendConfigured } from './adapters/backend.js';
 
 import inicio from './modules/inicio.js';
 import asistente from './modules/asistente.js';
@@ -36,7 +38,7 @@ let current = null;
 
 function counts() {
   return {
-    tareas: store.all('tareas').filter((x) => x.estado !== 'Hecha' && isOverdue(x.limite, false)).length,
+    tareas: store.all('tareas').filter((x) => !['Hecha', 'Cancelada'].includes(x.estado) && isOverdue(x.limite, false)).length,
     incidencias: store.all('incidencias').filter((x) => !['Resuelta', 'Cerrada'].includes(x.estado)).length,
     aprobaciones: store.all('aprobaciones').filter((x) => x.estado === 'Pendiente').length,
   };
@@ -55,7 +57,7 @@ function renderSidebar() {
         return `<button class="nav-item ${current === id ? 'active' : ''}" data-nav="${id}">${icon(m.icon)}<span>${navLabel(m)}</span>${n ? `<span class="count">${n}</span>` : ''}</button>`; }).join('')}
     `).join('')}
     <div class="sidebar-foot">
-      <div class="user-chip"><span class="avatar">${(s.userName || 'A')[0]}</span><div class="grow"><div class="small" style="font-weight:600">${s.userName}</div><div class="xs subtle">${s.company} · ${t('common.local', 'Modo local')}</div></div>
+      <div class="user-chip"><span class="avatar">${(s.userName || 'A')[0]}</span><div class="grow"><div class="small" style="font-weight:600">${s.userName}</div><div class="xs subtle">${s.company} · ${backendConfigured() ? (sync.state.auth?.authenticated ? 'Conectado' : 'Sin sesión') : t('common.local', 'Modo local')}</div></div>
       <button class="btn ghost icon sm" data-theme-toggle aria-label="Cambiar tema">${icon(document.documentElement.dataset.theme === 'dark' ? 'sun' : 'moon', 'sm')}</button></div>
     </div>`;
 }
@@ -72,6 +74,7 @@ function renderTopbar(m) {
   $('#topbar').innerHTML = `
     <div class="crumb"><span class="d-only">${icon(m.icon, 'sm')}</span><b>${navLabel(m)}</b></div>
     <div class="spacer"></div>
+    ${backendConfigured() ? `<button class="btn ghost icon" data-synctop aria-label="Actualizar ahora" title="${sync.state.busy ? 'Actualizando…' : `Actualizar ahora${store.getSettings().lastSync ? ' · última: ' + relTime(store.getSettings().lastSync) : ''}${sync.state.error ? ' · ' + sync.state.error : ''}`}" ${sync.state.busy ? 'disabled' : ''} style="${sync.state.error ? 'color:var(--red)' : ''}">${icon('refresh')}</button>` : ''}
     <button class="btn ghost icon" data-nav="aprobaciones" aria-label="Aprobaciones pendientes" style="position:relative">${icon('bell')}${n ? `<span style="position:absolute;top:6px;right:6px;width:8px;height:8px;border-radius:50%;background:var(--red)"></span>` : ''}</button>
     <button class="btn primary sm m-only" data-quick aria-label="Registrar">${icon('plus', 'sm')}</button>`;
 }
@@ -139,6 +142,11 @@ function bindShell() {
   on(app, 'click', '[data-nav]', (e, el) => { location.hash = `#/${el.dataset.nav}`; });
   on(app, 'click', '[data-more]', openMore);
   on(app, 'click', '[data-quick]', openQuick);
+  on(app, 'click', '[data-synctop]', async () => {
+    if (!sync.state.auth?.authenticated) { location.hash = '#/configuracion'; toast('Inicia sesión para sincronizar', 'lock'); return; }
+    try { const r = await sync.syncNow(); toast(`Actualizado · ${r?.changes || 0} cambios`, 'check'); } catch (e) { toast(e.message, 'alert'); }
+  });
+  sync.onSync(() => { if (BY_ID[current]) renderTopbar(BY_ID[current]); renderSidebar(); });
   on(app, 'click', '[data-theme-toggle]', () => {
     store.setSettings({ theme: document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark' });
     applyTheme(); renderSidebar();
@@ -175,3 +183,4 @@ bindShell();
 try { runLocalAutomations(); } catch (e) { console.warn('Automatizaciones', e); }
 route();
 registerSW();
+sync.startAutoSync().catch((e) => console.warn('Sincronización', e));

@@ -31,7 +31,8 @@ const SEED_VERSION = 1;
 
 const DEFAULT_SETTINGS = {
   theme: 'auto', lang: 'es', userName: 'Alberto', company: 'Restalia',
-  backendUrl: '', aiProvider: 'none', aiModel: '', showDemo: true, seedVersion: 0,
+  backendUrl: '', aiProvider: 'auto', aiModel: '', showDemo: true, seedVersion: 0, settingsVersion: 2,
+  syncCursor: null, lastSync: null, demoAutoHidden: false,
 };
 
 const safe = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
@@ -68,7 +69,10 @@ function seedDemo() {
 }
 
 export function init() {
-  settings = { ...DEFAULT_SETTINGS, ...(safe.get(SET_KEY) || {}) };
+  const saved = safe.get(SET_KEY) || {};
+  settings = { ...DEFAULT_SETTINGS, ...saved };
+  // v2: el proveedor de IA por defecto pasa a «el que tenga el backend» (antes «ninguno» era solo el valor inicial).
+  if ((saved.settingsVersion || 1) < 2) { if (settings.aiProvider === 'none') settings.aiProvider = 'auto'; settings.settingsVersion = 2; }
   data = safe.get(DATA_KEY);
   if (!data || settings.seedVersion !== SEED_VERSION) {
     data = seedDemo();
@@ -87,7 +91,7 @@ export const subscribe = (fn) => { listeners.add(fn); return () => listeners.del
 
 // ---------- Consultas ----------
 export const all = (col) => {
-  const list = data[col] || [];
+  const list = (data[col] || []).filter((r) => !r.hidden); // hidden: duplicado de otra fuente (p. ej. evento en Notion y Outlook)
   return settings.showDemo ? list : list.filter((r) => !r.demo);
 };
 export const find = (col, id) => (data[col] || []).find((r) => r.id === id);
@@ -96,17 +100,39 @@ export const projectName = (id) => find('proyectos', id)?.nombre ?? '—';
 
 // ---------- Escrituras (siempre locales; la sincronización externa pasa por Aprobaciones) ----------
 export function add(col, rec, { prefix } = {}) {
-  const r = { id: rec.id || uid(prefix || col.slice(0, 3)), ...rec, demo: false, source: { system: 'local', ref: null }, createdAt: new Date().toISOString() };
+  const r = { id: rec.id || uid(prefix || col.slice(0, 3)), ...rec, demo: rec.derivedFromDemo === true, source: { system: 'local', ref: null }, createdAt: new Date().toISOString() };
   data[col].unshift(r);
   emit(col);
   return r;
 }
+// Campos de registros de Notion cuyo cambio en la app se propone a Notion (vía Aprobaciones). Coincide con WRITABLE del backend.
+const NOTION_WRITABLE = { tareas: ['estado', 'limite', 'descripcion', 'evidencia'], incidencias: ['estado', 'accion'], visitas: ['estado', 'observaciones', 'resultado'] };
+
 export function update(col, id, patch) {
   const i = data[col].findIndex((r) => r.id === id);
   if (i < 0) return null;
-  data[col][i] = { ...data[col][i], ...patch, updatedAt: new Date().toISOString() };
+  const before = data[col][i];
+  data[col][i] = { ...before, ...patch, updatedAt: new Date().toISOString() };
+  // Registro real de Notion: el cambio se queda en la app y se crea una propuesta para escribirlo en Notion.
+  if (before.source?.system === 'notion' && NOTION_WRITABLE[col]) {
+    const changes = Object.fromEntries(Object.entries(patch).filter(([k, v]) => NOTION_WRITABLE[col].includes(k) && v !== before[k]));
+    if (Object.keys(changes).length) proposeNotionChange(col, before, changes);
+  }
   emit(col);
   return data[col][i];
+}
+
+function proposeNotionChange(col, rec, changes) {
+  const base = { tareas: 'Acciones y seguimientos', incidencias: 'Incidencias', visitas: 'Visitas' }[col];
+  const title = rec.titulo || rec.nombre || rec.id;
+  // Si ya hay una propuesta pendiente para el mismo registro, se actualiza en lugar de duplicarla.
+  const prev = data.aprobaciones.find((a) => a.estado === 'Pendiente' && a.op?.ref === rec.source.ref);
+  const merged = { ...(prev?.op?.changes || {}), ...changes };
+  const datos = { Base: base, Registro: title, ...Object.fromEntries(Object.entries(merged).map(([k, v]) => [k[0].toUpperCase() + k.slice(1), `${rec[k] ?? '—'} → ${v}`])) };
+  const fields = { accion: `Actualizar «${title}» en Notion`, sistema: 'Notion', motivo: 'Cambio hecho en la app sobre un registro sincronizado de Notion', datos,
+    resultado: `Se modificará la página en «${base}» y se anotará en Historial de cambios.`, op: { type: 'notion.update', collection: col, ref: rec.source.ref, changes: merged }, refUrl: rec.url || null };
+  if (prev) Object.assign(prev, fields);
+  else data.aprobaciones.unshift({ id: uid('apr'), ...fields, estado: 'Pendiente', creada: new Date().toISOString(), origen: 'Cambio en la app', historial: [], demo: false, source: { system: 'local', ref: null } });
 }
 export function remove(col, id) {
   data[col] = data[col].filter((r) => r.id !== id);
@@ -157,13 +183,36 @@ export function exportAll() { return JSON.stringify({ app: 'restalia-operations-
 export function importAll(json) {
   const o = JSON.parse(json);
   if (o.app !== 'restalia-operations-ai' || !o.data) throw new Error('El archivo no es una copia de Restalia Operations AI.');
-  data = o.data; settings = { ...DEFAULT_SETTINGS, ...o.settings }; assistant = o.assistant || assistant;
+  data = o.data; settings = { ...DEFAULT_SETTINGS, ...o.settings, syncCursor: null }; assistant = o.assistant || assistant;
   persist(); persistAI(); listeners.forEach((fn) => fn('*'));
 }
-export function resetDemo() { data = seedDemo(); persist(); listeners.forEach((fn) => fn('*')); }
+export function resetDemo() { data = seedDemo(); settings.syncCursor = null; persist(); listeners.forEach((fn) => fn('*')); }
 export function removeDemo() { for (const c of COLLECTIONS) data[c] = (data[c] || []).filter((r) => !r.demo); persist(); listeners.forEach((fn) => fn('*')); }
-export function wipe() { data = Object.fromEntries(COLLECTIONS.map((c) => [c, []])); data.plantillas = seedDemo().plantillas; assistant = { conversations: [], memory: [] }; persist(); persistAI(); listeners.forEach((fn) => fn('*')); }
+export function wipe() { data = Object.fromEntries(COLLECTIONS.map((c) => [c, []])); data.plantillas = seedDemo().plantillas; settings.syncCursor = null; assistant = { conversations: [], memory: [] }; persist(); persistAI(); listeners.forEach((fn) => fn('*')); }
 
-/** Fusión sin duplicados: integra registros externos por (sistema, ref). Ver js/core/sync.js */
+/**
+ * Fusión sin duplicados: integra registros del backend por la pareja (sistema, ref). Ver js/core/sync.js.
+ * Nunca toca registros DEMO ni locales. Devuelve el número de cambios por colección.
+ */
+export function applyRemote(records) {
+  const touched = {};
+  const index = {};
+  for (const r of records) {
+    if (!SCHEMA[r.collection]) continue; // colecciones solo del backend (p. ej. registroIA)
+    const col = r.collection;
+    if (!index[col]) { index[col] = new Map(); (data[col] || []).forEach((x, i) => { if (x.source && x.source.system !== 'local' && x.source.system !== 'demo' && x.source.system !== 'app') index[col].set(`${x.source.system}|${x.source.ref}`, i); }); }
+    const key = `${r.system}|${r.ref}`;
+    const i = index[col].get(key);
+    if (r.deleted) { if (i != null) { data[col][i] = null; touched[col] = (touched[col] || 0) + 1; } continue; }
+    const rec = { ...r.data, id: r.data.id || r.ref, demo: false, source: { system: r.system, ref: r.ref, updatedAt: r.updatedAt, syncedAt: r.syncedAt } };
+    if (i != null) data[col][i] = rec; else { data[col].push(rec); index[col].set(key, data[col].length - 1); }
+    touched[col] = (touched[col] || 0) + 1;
+  }
+  for (const col of Object.keys(touched)) data[col] = data[col].filter(Boolean);
+  if (Object.keys(touched).length) { persist(); listeners.forEach((fn) => fn('*')); }
+  return touched;
+}
+/** Recalcula marcas derivadas sin avisar a la vista (las llama sync.js tras fusionar). */
+export function _mutate(col, fn) { (data[col] || []).forEach(fn); persist(); }
 export function _replaceCollection(col, list) { data[col] = list; emit(col); }
 export const _raw = (col) => data[col] || [];

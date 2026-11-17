@@ -1,6 +1,6 @@
 // Service worker: guarda la app en el dispositivo para abrirla sin conexión.
 // Solo cachea los archivos propios de la app. Nunca cachea llamadas al backend.
-const VERSION = 'restalia-v0.1.0';
+const VERSION = 'restalia-v0.2.0';
 const SHELL = [
   './',
   "./css/app.css",
@@ -23,6 +23,7 @@ const SHELL = [
   "./js/core/insights.js",
   "./js/core/media.js",
   "./js/core/store.js",
+  "./js/core/sync.js",
   "./js/core/ui.js",
   "./js/core/utils.js",
   "./js/data/demo.js",
@@ -55,6 +56,7 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return; // backend y terceros: siempre red
+  if (url.pathname.startsWith('/api/') || url.pathname === '/api') return; // backend en el mismo origen: nunca se cachea
   // Navegación: red primero (para recibir versiones nuevas), caché si no hay conexión.
   if (e.request.mode === 'navigate') {
     e.respondWith(fetch(e.request).then((r) => { const copy = r.clone(); caches.open(VERSION).then((c) => c.put('./', copy)); return r; }).catch(() => caches.match('./')));

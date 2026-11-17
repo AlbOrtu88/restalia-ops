@@ -4,13 +4,14 @@ import * as store from './store.js';
 import { isToday, isOverdue, startOfDay, addDays, diffDays, toDate, fmtTime } from './utils.js';
 
 const OPEN_INC = (i) => !['Resuelta', 'Cerrada'].includes(i.estado);
-const OPEN_TASK = (t) => t.estado !== 'Hecha';
+const OPEN_TASK = (t) => !['Hecha', 'Cancelada'].includes(t.estado);
 const PRIO = { 'Crítica': 0, 'Alta': 1, 'Media': 2, 'Baja': 3 };
 
 /** Eventos unificados de agenda: eventos + visitas + auditorías + tareas con fecha + incidencias con límite */
 export function agendaItems() {
   const items = store.all('eventos').map((e) => ({ ...e, kind: 'evento', href: null }));
-  for (const v of store.all('visitas')) items.push({ id: v.id, titulo: `Visita · ${store.localName(v.localId)}`, tipo: 'visita', inicio: v.fecha, fin: toDate(v.fecha).getTime() + 3600e3, localId: v.localId, ubicacion: store.localName(v.localId), responsable: v.responsable, estado: 'Completado', kind: 'visita', href: `#/visitas/${v.id}`, demo: v.demo });
+  const vName = (v) => (v.localId ? store.localName(v.localId) : v.localNombre || v.titulo || '—');
+  for (const v of store.all('visitas').filter((x) => x.fecha)) items.push({ id: v.id, titulo: `Visita · ${vName(v)}`, tipo: 'visita', inicio: v.fecha, fin: toDate(v.fecha).getTime() + 3600e3, localId: v.localId, ubicacion: vName(v), responsable: v.responsable, estado: v.estado || 'Completado', kind: 'visita', href: `#/visitas/${v.id}`, demo: v.demo });
   for (const v of store.all('visitas').filter((x) => x.seguimiento)) items.push({ id: v.id + '-seg', titulo: `Seguimiento · ${store.localName(v.localId)}`, tipo: 'seguimiento', inicio: v.seguimiento, fin: toDate(v.seguimiento).getTime() + 1800e3, localId: v.localId, ubicacion: store.localName(v.localId), responsable: v.responsable, estado: 'Pendiente', kind: 'visita', href: `#/visitas/${v.id}`, demo: v.demo });
   for (const a of store.all('auditorias').filter((x) => x.estado !== 'Completada')) items.push({ id: a.id, titulo: `Auditoría · ${store.localName(a.localId)}`, tipo: 'auditoria', inicio: a.fecha, fin: toDate(a.fecha).getTime() + 5400e3, localId: a.localId, ubicacion: store.localName(a.localId), responsable: a.auditor, estado: a.estado, kind: 'auditoria', href: `#/auditorias/${a.id}`, demo: a.demo });
   for (const t of store.all('tareas').filter((x) => x.limite && OPEN_TASK(x))) items.push({ id: t.id, titulo: t.titulo, tipo: 'tarea', inicio: t.limite, fin: t.limite, allDay: true, localId: t.localId, ubicacion: t.localId ? store.localName(t.localId) : '', responsable: t.responsable, estado: t.estado, kind: 'tarea', href: `#/tareas/${t.id}`, demo: t.demo });

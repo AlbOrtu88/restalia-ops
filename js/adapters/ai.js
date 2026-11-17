@@ -4,10 +4,11 @@ import { request, backendConfigured } from './backend.js';
 import { getSettings } from '../core/store.js';
 
 export const AI_PROVIDERS = [
-  { id: 'none', label: 'Sin proveedor (motor local de demostración)' },
+  { id: 'auto', label: 'El que tenga configurado el backend (recomendado)' },
+  { id: 'none', label: 'Sin IA (motor local de demostración)' },
   { id: 'anthropic', label: 'Anthropic Claude (vía backend)' },
   { id: 'openai', label: 'OpenAI (vía backend)' },
-  { id: 'azure-openai', label: 'Azure OpenAI (vía backend, tenant Restalia)' },
+  { id: 'workers-ai', label: 'Cloudflare Workers AI (vía backend, sin clave externa)' },
 ];
 
 export const aiAdapter = {

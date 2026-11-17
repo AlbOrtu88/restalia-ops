@@ -19,14 +19,14 @@ export function runLocalAutomations() {
         const last = new Date(inc.updatedAt || inc.fecha).getTime();
         const key = `aut-01:${inc.id}`;
         if (inc.prioridad !== 'Crítica' || ['Resuelta', 'Cerrada'].includes(inc.estado) || !Number.isFinite(last) || now - last <= H48 || ya.has(key)) continue;
-        store.add('tareas', { titulo: `Escalar ${inc.id}: ${inc.titulo}`, descripcion: 'Incidencia crítica sin avance en 48 h (automatización).', responsable: 'Alberto', prioridad: 'Crítica', estado: 'Pendiente', creada: new Date().toISOString(), limite: addDays(new Date(), 1).toISOString(), proyectoId: null, localId: inc.localId, evidencias: [], origenRef: inc.id, autoRef: key }, { prefix: 'tsk' });
+        store.add('tareas', { titulo: `Escalar ${inc.id}: ${inc.titulo}`, descripcion: 'Incidencia crítica sin avance en 48 h (automatización).', responsable: 'Alberto', prioridad: 'Crítica', estado: 'Pendiente', creada: new Date().toISOString(), limite: addDays(new Date(), 1).toISOString(), proyectoId: null, localId: inc.localId, evidencias: [], origenRef: inc.id, autoRef: key, derivedFromDemo: !!inc.demo }, { prefix: 'tsk' });
         ya.add(key);
         store.log(`Automatización: se escaló ${inc.id}`, 'automatizaciones');
         n++;
       }
       resultado = n ? `${n} ${n === 1 ? 'incidencia escalada' : 'incidencias escaladas'}` : 'Sin incidencias que escalar';
     } else if (rule.id === 'aut-03') {
-      const n = store.all('tareas').filter((t) => isOverdue(t.limite, t.estado === 'Hecha')).length;
+      const n = store.all('tareas').filter((t) => isOverdue(t.limite, ['Hecha', 'Cancelada'].includes(t.estado))).length;
       resultado = `${n} ${n === 1 ? 'tarea vencida' : 'tareas vencidas'}`;
     } else if (rule.id === 'aut-02') {
       resultado = 'Se aplica al guardar una visita';

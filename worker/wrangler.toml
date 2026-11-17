@@ -1,0 +1,33 @@
+# Restalia Operations AI · backend (BFF) en Cloudflare Workers.
+# Aquí NO hay secretos ni identificadores de tenant, buzón o equipo: van como Secrets del Worker
+# (ver docs/backend.md). Los IDs de D1 son de recursos de Cloudflare, no datos de Restalia.
+name = "restalia-ops"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+[vars]
+ENVIRONMENT = "prod"
+FRONTEND_ORIGIN = "https://albortu88.github.io/restalia-ops"
+NOTION_VERSION = "2025-09-03"
+TIMEZONE = "Europe/Madrid"
+
+[ai]
+binding = "AI"
+
+[triggers]
+crons = ["*/15 * * * *", "30 2 * * *"]
+
+[env.dev]
+name = "restalia-ops-dev"
+vars = { ENVIRONMENT = "dev", FRONTEND_ORIGIN = "https://albortu88.github.io/restalia-ops", NOTION_VERSION = "2025-09-03", TIMEZONE = "Europe/Madrid" }
+ai = { binding = "AI" }
+triggers = { crons = ["*/30 * * * *"] }
+d1_databases = [{ binding = "DB", database_name = "restalia-ops-dev", database_id = "1ac021ad-c3fb-449d-94be-a3c8bd60a813" }]
+
+[env.prod]
+name = "restalia-ops"
+vars = { ENVIRONMENT = "prod", FRONTEND_ORIGIN = "https://albortu88.github.io/restalia-ops", NOTION_VERSION = "2025-09-03", TIMEZONE = "Europe/Madrid" }
+ai = { binding = "AI" }
+triggers = { crons = ["*/15 * * * *", "30 2 * * *"] }
+d1_databases = [{ binding = "DB", database_name = "restalia-ops", database_id = "00173763-992c-4b73-9672-e018e55dfba2" }]

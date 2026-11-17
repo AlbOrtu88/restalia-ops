@@ -1,0 +1,67 @@
+// Servidor simulado de Notion, Microsoft Entra ID y Microsoft Graph para pruebas locales (datos ficticios).
+// node test/mock-apis.mjs  → http://localhost:8790
+import http from 'node:http';
+
+const PORT = 8790, B = `http://localhost:${PORT}`;
+const log = [];
+const T0 = Date.now();
+const iso = (d) => new Date(T0 + d * 864e5).toISOString();
+const rt = (s) => [{ plain_text: s }];
+const page = (id, props, extra = {}) => ({ object: 'page', id, url: `https://www.notion.so/${id.replace(/-/g, '')}`, created_time: iso(-10), last_edited_time: iso(-1), archived: false, properties: props, ...extra });
+
+const SCHEMAS = {
+  'ds-locales': { 'Nombre': { type: 'title', title: {} }, 'Dirección': { type: 'rich_text' }, 'Estado': { type: 'select', select: { options: [{ name: 'Activo' }, { name: 'En seguimiento' }] } }, 'Fecha última visita': { type: 'date' }, 'Formato': { type: 'select', select: { options: [] } } },
+  'ds-tareas': { 'Acción': { type: 'title', title: {} }, 'Estado': { type: 'status', status: { options: [{ name: 'Pendiente' }, { name: 'En curso' }, { name: 'Bloqueada' }, { name: 'Hecha' }, { name: 'Cancelada' }], groups: [] } }, 'Fecha compromiso': { type: 'date' }, 'Local': { type: 'rich_text' }, 'Notas': { type: 'rich_text' }, 'Origen': { type: 'select', select: { options: [{ name: 'Visita' }] } }, 'Evidencia de cierre': { type: 'rich_text' } },
+  'ds-historial': { 'Cambio': { type: 'title', title: {} }, 'Fecha': { type: 'date' }, 'Registro afectado': { type: 'rich_text' }, 'Campo modificado': { type: 'rich_text' }, 'Aprobación vinculada': { type: 'rich_text' } },
+};
+let tareas = [
+  page('aaaaaaaa-0000-0000-0000-000000000001', { 'Acción': { type: 'title', title: rt('Revisar cámara FICTICIA') }, 'Estado': { type: 'status', status: { name: 'Pendiente' } }, 'Fecha compromiso': { type: 'date', date: { start: iso(2).slice(0, 10) } }, 'Local': { type: 'rich_text', rich_text: rt('Local Prueba 1') }, 'Notas': { type: 'rich_text', rich_text: rt('nota') }, 'Origen': { type: 'select', select: { name: 'Visita' } }, 'Evidencia de cierre': { type: 'rich_text', rich_text: [] } }),
+  page('aaaaaaaa-0000-0000-0000-000000000002', { 'Acción': { type: 'title', title: rt('Tarea dos FICTICIA') }, 'Estado': { type: 'status', status: { name: 'Hecha' } }, 'Fecha compromiso': { type: 'date', date: null }, 'Local': { type: 'rich_text', rich_text: [] }, 'Notas': { type: 'rich_text', rich_text: [] }, 'Origen': { type: 'select', select: null }, 'Evidencia de cierre': { type: 'rich_text', rich_text: [] } }),
+];
+const locales = [page('bbbbbbbb-0000-0000-0000-000000000001', { 'Nombre': { type: 'title', title: rt('Local Prueba 1') }, 'Dirección': { type: 'rich_text', rich_text: rt('Calle Falsa 1') }, 'Estado': { type: 'select', select: { name: 'Activo' } }, 'Fecha última visita': { type: 'date', date: { start: iso(-5).slice(0, 10) } }, 'Formato': { type: 'select', select: null } })];
+const pagesOf = { 'ds-locales': () => locales, 'ds-tareas': () => tareas, 'ds-historial': () => [] };
+
+function jwt(payload) { const b = (o) => Buffer.from(JSON.stringify(o)).toString('base64url'); return `${b({ alg: 'none' })}.${b(payload)}.x`; }
+
+const routes = [
+  ['GET', /^\/login\/([^/]+)\/oauth2\/v2\.0\/authorize$/, () => [200, {}]],
+  ['POST', /^\/__del$/, () => { tareas = tareas.slice(0, 1); return [200, {}]; }],
+  ['POST', /^\/login\/([^/]+)\/oauth2\/v2\.0\/token$/, (m, body) => {
+    const p = new URLSearchParams(body);
+    if (p.get('grant_type') === 'authorization_code' && !p.get('code_verifier')) return [400, { error: 'invalid_request' }];
+    return [200, { access_token: 'AT-' + Date.now(), refresh_token: 'RT', expires_in: 3600, scope: p.get('scope') || 'Mail.Read', id_token: jwt({ tid: m[1], preferred_username: p.get('code') === 'otro' ? 'otra@persona.test' : 'test@example.com', name: 'Usuario Prueba', oid: 'me-oid' }) }];
+  }],
+  ['GET', /^\/notion\/data_sources\/([^/]+)$/, (m) => SCHEMAS[m[1]] ? [200, { object: 'data_source', id: m[1], title: rt(m[1]), properties: SCHEMAS[m[1]] }] : [404, { code: 'object_not_found' }]],
+  ['POST', /^\/notion\/data_sources\/([^/]+)\/query$/, (m, body) => {
+    const q = JSON.parse(body || '{}'); const all = pagesOf[m[1]]?.() || [];
+    const start = Number(q.start_cursor || 0); const size = 1; // paginación de 1 en 1 para probarla
+    const slice = all.slice(start, start + size);
+    return [200, { object: 'list', results: slice, has_more: start + size < all.length, next_cursor: start + size < all.length ? String(start + size) : null }];
+  }],
+  ['PATCH', /^\/notion\/pages\/([^/]+)$/, (m, body) => { const pg = tareas.find((t) => t.id === m[1]); if (!pg) return [404, {}]; const pr = JSON.parse(body).properties; Object.assign(pg.properties, Object.fromEntries(Object.entries(pr).map(([k, v]) => [k, { type: Object.keys(v)[0], ...v }]))); pg.last_edited_time = new Date().toISOString(); return [200, pg]; }],
+  ['POST', /^\/notion\/pages$/, (m, body) => [200, { object: 'page', id: 'cccccccc-0000-0000-0000-00000000000' + log.length % 10, url: 'https://www.notion.so/nueva', body: JSON.parse(body) }]],
+  ['GET', /^\/graph\/me\/calendarView\/delta/, (m, b, url) => url.includes('page=2')
+    ? [200, { value: [{ id: 'ev2', '@removed': { reason: 'deleted' } }], '@odata.deltaLink': `${B}/graph/me/calendarView/delta?token=d1` }]
+    : [200, { value: [{ id: 'ev1', subject: 'Reunión FICTICIA', start: { dateTime: iso(1).slice(0, 19) }, end: { dateTime: iso(1.05).slice(0, 19) }, attendees: [{}], isOnlineMeeting: true, webLink: 'https://outlook/ev1', showAs: 'busy' }], '@odata.nextLink': `${B}/graph/me/calendarView/delta?page=2` }]],
+  ['GET', /^\/graph\/me\/mailFolders\/inbox\/messages\/delta/, () => [200, { value: [{ id: 'm1', subject: 'Presupuesto FICTICIO', from: { emailAddress: { name: 'Proveedor Prueba', address: 'p@x.test' } }, receivedDateTime: iso(0), bodyPreview: '¿Puedes confirmarlo antes del jueves?', importance: 'normal', webLink: 'https://outlook/m1', flag: { flagStatus: 'notFlagged' } }], '@odata.deltaLink': `${B}/graph/me/mailFolders/inbox/messages/delta?token=x` }]],
+  ['GET', /^\/graph\/me\/drive\/root\/delta/, () => [200, { value: [{ id: 'f0', name: 'Carpeta', folder: {} }, { id: 'f1', name: 'Procedimiento de apertura FICTICIO.pdf', file: {}, webUrl: 'https://sp/f1', lastModifiedDateTime: iso(-3), parentReference: { path: '/drive/root:/Operaciones' }, size: 1000 }], '@odata.deltaLink': `${B}/graph/me/drive/root/delta?token=x` }]],
+  ['GET', /^\/graph\/me\/chats/, () => [200, { value: [{ id: 'c1', topic: 'Chat prueba', webUrl: 'https://teams/c1', lastMessagePreview: { id: 'lm1', createdDateTime: iso(0), body: { content: '<p>Necesito el informe para mañana</p>' }, from: { user: { displayName: 'Compañero Prueba' } } } }] }]],
+  ['POST', /^\/graph\/search\/query$/, () => [200, { value: [{ hitsContainers: [{ hits: [{ summary: 'procedimiento de <c0>apertura</c0>', resource: { id: 'f1', name: 'Procedimiento de apertura FICTICIO.pdf', webUrl: 'https://x.sharepoint.com/sites/ops/f1', lastModifiedDateTime: iso(-3), parentReference: { path: '/drive/root:/Operaciones' } } }] }] }] }]],
+];
+
+http.createServer((req, res) => {
+  let body = '';
+  req.on('data', (c) => (body += c));
+  req.on('end', () => {
+    log.push(`${req.method} ${req.url}`);
+    if (req.url === '/__log') { res.end(JSON.stringify(log)); return; }
+    const path = req.url.split('?')[0];
+    if (/^\/graph\//.test(path) && req.method !== 'GET' && path !== '/graph/search/query') { res.writeHead(500); res.end('ESCRITURA EN GRAPH DETECTADA'); return; }
+    for (const [m, re, fn] of routes) {
+      const mm = req.method === m && path.match(re);
+      if (mm && /authorize$/.test(path)) { const q = new URL(req.url, B).searchParams; res.writeHead(302, { Location: `${q.get('redirect_uri')}?code=abc&state=${q.get('state')}` }); res.end(); return; }
+      if (mm) { const [st, out] = fn(mm, body, req.url); res.writeHead(st, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(out)); return; }
+    }
+    res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: { code: 'NotFound' } }));
+  });
+}).listen(PORT, () => console.log('mock en', B));

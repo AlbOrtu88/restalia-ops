@@ -16,7 +16,7 @@ const SUGGESTIONS = [
   { q: 'Busca un procedimiento de limpieza', ic: 'search' },
   { q: 'Prepara un informe de visitas', ic: 'chart' },
 ];
-const OPEN_TASK = (t) => t.estado !== 'Hecha';
+const OPEN_TASK = (t) => !['Hecha', 'Cancelada'].includes(t.estado);
 const OPEN_INC = (i) => !['Resuelta', 'Cerrada'].includes(i.estado);
 const PRIO = { 'Crítica': 0, 'Alta': 1, 'Media': 2, 'Baja': 3 };
 const L = (text, href) => ({ text, href });
@@ -245,11 +245,33 @@ function fallback() {
 }
 
 // ---------- Render de respuestas ----------
+const safeUrl = (u) => { try { const x = new URL(u); return ['https:', 'http:'].includes(x.protocol) ? x.href : ''; } catch { return ''; } };
+/** Markdown mínimo y seguro (se escapa todo y luego se aplican negritas, listas y citas [n] enlazadas a su fuente). */
+function mdSafe(md, sources = []) {
+  const byN = Object.fromEntries(sources.map((x) => [x.n, x]));
+  const inline = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\[(\d+)\]/g, (m, n) => {
+    const src = byN[n]; const u = src && safeUrl(src.url);
+    return src ? (u ? `<a href="${esc(u)}" target="_blank" rel="noopener" class="cite" title="${esc(src.title)}">[${n}]</a>` : `<span class="cite" title="${esc(src.title)}">[${n}]</span>`) : m;
+  });
+  const out = []; let list = null;
+  for (const line of String(md).split('\n')) {
+    const li = line.match(/^\s*(?:[-*•]|\d+[.)])\s+(.*)/);
+    if (li) { if (!list) { list = []; } list.push(`<li>${inline(li[1])}</li>`); continue; }
+    if (list) { out.push(`<ul>${list.join('')}</ul>`); list = null; }
+    const h = line.match(/^#{1,4}\s+(.*)/);
+    if (h) out.push(`<h4>${inline(h[1])}</h4>`); else if (line.trim()) out.push(`<p style="margin:4px 0">${inline(line)}</p>`);
+  }
+  if (list) out.push(`<ul>${list.join('')}</ul>`);
+  return out.join('');
+}
+
 function renderAnswer(a, mi) {
   const li = (x) => `<li>${x.href ? `<a href="${esc(x.href)}">${esc(x.text)}</a>` : esc(x.text)}</li>`;
   return `<div class="answer">
     ${a.title ? `<h4 style="font-size:15px">${esc(a.title)}</h4>` : ''}
     ${a.note ? `<div class="notice demo" style="margin:6px 0 10px">${icon('info')}<div>${esc(a.note)}</div></div>` : ''}
+    ${a.md ? mdSafe(a.md, a.sources) : ''}
+    ${a.sources?.length ? `<details class="xs" style="margin-top:8px"><summary>Fuentes (${a.sources.length})</summary><ol style="margin:6px 0;padding-left:18px">${a.sources.map((x) => `<li value="${x.n}">${safeUrl(x.url) ? `<a href="${esc(safeUrl(x.url))}" target="_blank" rel="noopener">${esc(x.title)}</a>` : esc(x.title)} <span class="subtle">· ${esc(x.system || '')}</span></li>`).join('')}</ol></details>` : ''}
     ${(a.sections || []).map((s) => `${s.h ? `<h4>${esc(s.h)}</h4>` : ''}${s.p ? `<p style="margin:4px 0">${esc(s.p)}</p>` : ''}${s.items?.length ? `<${s.ol ? 'ol' : 'ul'}>${s.items.map(li).join('')}</${s.ol ? 'ol' : 'ul'}>` : ''}`).join('')}
     ${a.actions?.length ? `<div class="actions">${a.actions.map((x, i) => x.done ? `<span class="badge green">${icon('check', 'sm')}${esc(x.done)}</span>` : `<button class="btn sm ${x.kind === 'nav' ? '' : 'primary'}" data-act="${mi}:${i}">${icon(x.kind === 'nav' ? 'right' : x.kind === 'task' ? 'plus' : 'check', 'sm')}${esc(x.label)}</button>`).join('')}</div>` : ''}
     ${a.src ? `<div class="src">${icon(a.remote ? 'sparkles' : 'info', 'sm')}${esc(a.src)}</div>` : ''}
@@ -429,8 +451,8 @@ export default {
       let answer;
       if (remote) {
         try {
-          const r = await aiAdapter.chat(conv.messages.map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text || m.answer?.title || '' })), { memory: store.ai.memory().map((m) => m.text), projectId: conv.projectId });
-          answer = { sections: [{ p: r.content }], actions: (r.actions || []).filter((a) => ['task', 'nav'].includes(a.kind)), src: `${store.getSettings().aiProvider} vía backend`, remote: true };
+          const r = await aiAdapter.chat(conv.messages.map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text || m.answer?.md || m.answer?.title || '' })), { memory: store.ai.memory().map((m) => m.text), projectId: conv.projectId });
+          answer = { md: r.content, sources: r.sources || [], actions: (r.actions || []).filter((a) => ['task', 'nav'].includes(a.kind)), src: `${r.provider || 'IA'}${r.model ? ' · ' + r.model : ''} · datos reales sincronizados`, remote: true };
         } catch (e) {
           answer = { ...localAnswer(text, { attachments: att }), note: `El proveedor de IA no respondió (${e.message}). Respuesta del motor local.` };
         }

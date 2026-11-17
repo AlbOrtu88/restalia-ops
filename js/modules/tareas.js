@@ -2,7 +2,7 @@ import * as store from '../core/store.js';
 import { icon, badge, demoBadge, sourceBadge, empty, pageHead, seg, bindSeg, field, readForm, openSheet, confirmSheet, toast, on, avatar } from '../core/ui.js';
 import { esc, matches, groupBy, fmtDate, relDay, isOverdue, isoDate, addDays, startOfDay, toDate, startOfWeek, sameDay, debounce } from '../core/utils.js';
 
-const ESTADOS = ['Pendiente', 'En curso', 'Bloqueada', 'Hecha'];
+const ESTADOS = ['Pendiente', 'En curso', 'Bloqueada', 'Hecha', 'Cancelada']; // los de «Acciones y seguimientos» en Notion
 const PRIOS = ['Crítica', 'Alta', 'Media', 'Baja'];
 const PRIO_N = { 'Crítica': 0, 'Alta': 1, 'Media': 2, 'Baja': 3 };
 const st = { view: 'lista', q: '', prio: '', mine: false, done: false };
@@ -56,15 +56,15 @@ export function openTaskForm(task = {}, { onSaved } = {}) {
 
 function filtered() {
   return store.all('tareas').filter((t) =>
-    (st.done || t.estado !== 'Hecha') && (!st.prio || t.prioridad === st.prio) && (!st.mine || t.responsable === 'Alberto') &&
+    (st.done || !['Hecha', 'Cancelada'].includes(t.estado)) && (!st.prio || t.prioridad === st.prio) && (!st.mine || t.responsable === 'Alberto') &&
     matches({ ...t, local: store.localName(t.localId), proyecto: store.projectName(t.proyectoId) }, st.q, ['titulo', 'descripcion', 'responsable', 'local', 'proyecto']))
-    .sort((a, b) => (a.estado === 'Hecha') - (b.estado === 'Hecha') || toDate(a.limite || 8.64e15) - toDate(b.limite || 8.64e15) || PRIO_N[a.prioridad] - PRIO_N[b.prioridad]);
+    .sort((a, b) => (['Hecha', 'Cancelada'].includes(a.estado)) - (['Hecha', 'Cancelada'].includes(b.estado)) || toDate(a.limite || 8.64e15) - toDate(b.limite || 8.64e15) || PRIO_N[a.prioridad] - PRIO_N[b.prioridad]);
 }
 
 const prioDot = (p) => `<span title="Prioridad ${p}" style="width:8px;height:8px;border-radius:50%;flex:none;background:var(--${{ 'Crítica': 'red', 'Alta': 'amber', 'Media': 'accent', 'Baja': 'text-3' }[p]})"></span>`;
 function row(t) {
-  const over = isOverdue(t.limite, t.estado === 'Hecha');
-  const done = t.estado === 'Hecha';
+  const over = isOverdue(t.limite, ['Hecha', 'Cancelada'].includes(t.estado));
+  const done = ['Hecha', 'Cancelada'].includes(t.estado);
   return `<div class="li" data-task="${t.id}">
     <button class="btn ghost icon sm" data-toggle="${t.id}" aria-label="${done ? 'Reabrir' : 'Marcar como hecha'}" style="color:${done ? 'var(--green)' : 'var(--text-3)'}">${icon(done ? 'checksq' : 'check')}</button>
     <div class="li-main">
@@ -94,9 +94,9 @@ function kanban(items) {
 function calendar(items) {
   const start = startOfWeek(new Date());
   const days = Array.from({ length: 14 }, (_, i) => addDays(start, i));
-  const over = items.filter((t) => isOverdue(t.limite, t.estado === 'Hecha'));
+  const over = items.filter((t) => isOverdue(t.limite, ['Hecha', 'Cancelada'].includes(t.estado)));
   return `${over.length ? listCard(over, `<span style="color:var(--red)">Vencidas</span>`) : ''}
-    ${days.map((d) => { const its = items.filter((t) => t.limite && sameDay(t.limite, d) && !isOverdue(t.limite, t.estado === 'Hecha'));
+    ${days.map((d) => { const its = items.filter((t) => t.limite && sameDay(t.limite, d) && !isOverdue(t.limite, ['Hecha', 'Cancelada'].includes(t.estado)));
       return its.length ? listCard(its, `<span style="text-transform:capitalize">${d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' })}</span>`) : ''; }).join('')}
     ${listCard(items.filter((t) => t.limite && toDate(t.limite) >= addDays(start, 14)), 'Más adelante')}`;
 }
@@ -139,7 +139,7 @@ export default {
     on(view, 'click', '[data-new]', () => openTaskForm({}, { onSaved: paint }));
     on(view, 'click', '[data-toggle]', (e, b) => {
       const t = store.find('tareas', b.dataset.toggle);
-      const estado = t.estado === 'Hecha' ? 'Pendiente' : 'Hecha';
+      const estado = ['Hecha', 'Cancelada'].includes(t.estado) ? 'Pendiente' : 'Hecha';
       store.update('tareas', t.id, { estado });
       if (estado === 'Hecha') { store.log(`Se completó la tarea «${t.titulo}»`, 'tareas'); toast('Tarea completada'); }
       paint();

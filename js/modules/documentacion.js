@@ -45,7 +45,7 @@ function render(view, params = []) {
   const documentos = store.all('documentos') || [];
   view.innerHTML = `
     ${pageHead('Documentación', 'Buscador de manuales, procedimientos y documentos de SharePoint y OneDrive.', '')}
-    ${demoNotice('<b>Documentos de ejemplo.</b> Los reales llegarán con el inventario de SharePoint y OneDrive. La app solo enlaza: nunca mueve, modifica ni borra archivos.')}
+    ${store.all('documentos').some((r) => r.demo) ? demoNotice('<b>Documentos de ejemplo.</b> Los reales llegarán con el inventario de SharePoint y OneDrive. La app solo enlaza: nunca mueve, modifica ni borra archivos.') : ''}
     <div class="stack" style="margin-top:14px">
       <div class="toolbar" style="margin:0">
         <div class="search">${icon('search', 'sm')}<input type="search" aria-label="Buscar documentos" placeholder="Buscar por título, resumen o ubicación" value="${esc(filtros.consulta)}"></div>
