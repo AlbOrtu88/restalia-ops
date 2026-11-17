@@ -4,9 +4,14 @@ import { icon, badge, pageHead, seg, bindSeg, field, openSheet, confirmSheet, to
 import { esc, download } from '../core/utils.js';
 import { LANGS } from '../core/i18n.js';
 import { ADAPTERS, connectionStatus, notificationsAdapter } from '../adapters/index.js';
-import { NOTION_DATABASES } from '../adapters/notion.js';
 import { AI_PROVIDERS } from '../adapters/ai.js';
-import { health } from '../adapters/backend.js';
+import { health, request, backendConfigured, backendUrl } from '../adapters/backend.js';
+import * as sync from '../core/sync.js';
+import { fmtDateTime, relTime } from '../core/utils.js';
+
+// Dirección de la app conectada (Worker de Cloudflare que sirve esta misma app y su backend).
+export const CONNECTED_URL = 'https://restalia-ops.hola-0d4.workers.dev/';
+const SOURCE_LABEL = { 'notion:locales': 'Notion · Locales', 'notion:visitas': 'Notion · Visitas', 'notion:incidencias': 'Notion · Incidencias', 'notion:tareas': 'Notion · Acciones y seguimientos', 'notion:contactos': 'Notion · Contactos', 'notion:aprobaciones': 'Notion · Bandeja de aprobaciones', 'notion:historial': 'Notion · Historial de cambios', 'notion:registroIA': 'Notion · Registro del asistente IA', 'notion:agenda': 'Notion · Agenda Restalia', 'graph:calendar': 'Outlook · Calendario', 'graph:mail': 'Outlook · Correo', 'graph:teams': 'Teams', 'graph:files': 'OneDrive y SharePoint' };
 
 const LAYERS = [
   { id: 'A', name: 'Datos operativos', src: 'Notion', cols: ['locales', 'visitas', 'incidencias', 'tareas', 'contactos', 'aprobaciones', 'actividad', 'eventos'] },
@@ -54,12 +59,9 @@ export default {
           <p class="xs subtle" style="margin-bottom:0">En Android o en Chrome de escritorio, usa «Instalar aplicación» en el menú del navegador.</p>`)}
 
       ${section('Conexiones', 'plug', `
-        <p class="small subtle" style="margin-top:0">La app nunca guarda contraseñas ni tokens. Un backend seguro custodia los accesos a Notion, Microsoft 365 y la IA. Aquí solo se indica su dirección.</p>
-        <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap">
-          <div class="field" style="flex:1;min-width:220px;margin:0"><label for="f-backend">Dirección del backend</label><input class="input" id="f-backend" type="url" inputmode="url" placeholder="https://api.ejemplo.com" value="${esc(s.backendUrl)}" data-backend></div>
-          <button class="btn" data-savebackend>Guardar</button>
-          <button class="btn" data-test>${icon('refresh', 'sm')}Probar</button>
-        </div>
+        <p class="small subtle" style="margin-top:0">La app nunca guarda contraseñas ni tokens. El backend seguro custodia los accesos a Notion, Microsoft 365 y la IA; el navegador solo lleva una cookie de sesión protegida.</p>
+        <div data-session><div class="small subtle">Comprobando la sesión…</div></div>
+        <div data-syncbox style="margin-top:14px"></div>
         <div class="list" style="margin-top:14px" data-adapters>${ADAPTERS.map((a) => `
           <div class="li" style="align-items:flex-start">
             <span class="li-icon">${icon({ notion: 'db', graph: 'globe', ai: 'sparkles', storage: 'folder', notifications: 'bell' }[a.id] || 'plug', 'sm')}</span>
@@ -68,8 +70,14 @@ export default {
               <div class="xs subtle" style="margin-top:4px;white-space:normal">Necesita: ${a.requires.map(esc).join(' · ')}</div></div>
             <span data-status="${ADAPTER_KEY[a.id]}">${badge('Comprobando…', '')}</span>
           </div>`).join('')}</div>
-        <details style="margin-top:12px"><summary class="small" style="cursor:pointer">Bases de Notion previstas</summary>
-          <div class="list" style="margin-top:8px">${Object.entries(NOTION_DATABASES).map(([k, d]) => `<div class="li"><div class="li-main"><div class="li-title">${esc(d.name)}</div><div class="li-sub mono">${d.databaseId ? esc(d.databaseId) : 'ID pendiente de recibir'}</div></div>${d.databaseId ? badge('ID recibido', 'green') : badge('Pendiente', 'amber')}</div>`).join('')}</div>
+        <div class="btn-row" style="margin-top:12px;flex-wrap:wrap"><button class="btn sm" data-schema>${icon('db', 'sm')}Esquema real de Notion</button><button class="btn sm" data-auditlog>${icon('history', 'sm')}Registro de auditoría</button></div>
+        <details style="margin-top:12px"><summary class="small" style="cursor:pointer">Avanzado: dirección del backend</summary>
+          <p class="xs subtle">Vacío = automático (la app conectada usa su propio dominio). Solo cámbialo si el backend está en otra dirección.</p>
+          <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap">
+            <div class="field" style="flex:1;min-width:220px;margin:0"><label for="f-backend">Dirección del backend</label><input class="input" id="f-backend" type="url" inputmode="url" placeholder="Automática" value="${esc(s.backendUrl)}" data-backend></div>
+            <button class="btn" data-savebackend>Guardar</button>
+            <button class="btn" data-test>${icon('refresh', 'sm')}Probar</button>
+          </div>
         </details>`, '<span class="xs subtle" data-backendstate></span>')}
 
       ${section('Asistente IA', 'sparkles', `
@@ -107,7 +115,7 @@ export default {
           <button class="btn danger" data-wipe>${icon('trash', 'sm')}Borrar todo</button>
         </div>`)}
 
-      <p class="xs subtle" style="text-align:center;margin:20px 0 0">Restalia Operations AI · versión 0.1 (primera entrega)</p>`;
+      <p class="xs subtle" style="text-align:center;margin:20px 0 0">Restalia Operations AI · versión 0.2 (backend conectado)</p>`;
 
     const $ = (q) => view.querySelector(q);
 
@@ -116,6 +124,93 @@ export default {
       if (!view.isConnected) return;
       Object.entries(ADAPTER_KEY).forEach(([, k]) => { const el = view.querySelector(`[data-status="${k}"]`); if (el) { const [t, c] = STATUS[st[k]] || STATUS.off; el.innerHTML = badge(t, c); } });
       $('[data-backendstate]').innerHTML = st.backend === 'off' ? 'Backend sin configurar' : st.backend === 'ok' ? '<span style="color:var(--green)">Backend accesible</span>' : '<span class="down">Backend no responde</span>';
+    });
+
+    // Sesión y sincronización con el backend
+    const sessionEl = $('[data-session]'), syncEl = $('[data-syncbox]');
+    const qs = new URLSearchParams(location.hash.split('?')[1] || '');
+    if (qs.get('ms') === 'ok') toast('Microsoft 365 conectado', 'check');
+    if (qs.get('ms') === 'error') toast(qs.get('msg') || 'No se pudo conectar Microsoft 365', 'alert');
+    if (qs.get('ms')) history.replaceState(null, '', '#/configuracion');
+
+    async function paintSession() {
+      if (!backendConfigured()) {
+        sessionEl.innerHTML = `<div class="notice">${icon('info')}<div>Estás en la versión sin conexión (datos solo en este dispositivo). Para usar los datos reales de Notion y Microsoft 365 abre la <a href="${CONNECTED_URL}" target="_blank" rel="noopener"><b>app conectada</b></a> e instálala en el iPhone desde allí.</div></div>`;
+        syncEl.innerHTML = '';
+        return;
+      }
+      const a = await sync.authStatus();
+      if (!view.isConnected) return;
+      if (!a) { sessionEl.innerHTML = `<div class="notice">${icon('alert')}<div>El backend no responde. Inténtalo de nuevo en unos minutos.</div></div>`; return; }
+      if (!a.authenticated) {
+        sessionEl.innerHTML = `<div class="notice">${icon('lock')}<div><b>Inicia sesión</b> para ver tus datos reales.</div></div>
+          <div class="btn-row" style="margin-top:10px;flex-wrap:wrap">
+            ${a.entraConfigured ? `<a class="btn primary" href="${esc(sync.loginUrl())}">${icon('globe', 'sm')}Entrar con Microsoft 365</a>` : `<span class="xs subtle">Microsoft 365: pendiente del registro de la app en Entra ID.</span>`}
+          </div>
+          ${a.keyLogin ? `<form class="row" data-keyform style="gap:8px;margin-top:10px;flex-wrap:wrap;align-items:flex-end"><div class="field" style="flex:1;min-width:200px;margin:0"><label for="f-key">Llave de acceso provisional</label><input class="input" id="f-key" type="password" autocomplete="current-password" required minlength="24"></div><button class="btn">Entrar con llave</button></form>` : ''}`;
+        return;
+      }
+      const ms = a.microsoft || {};
+      const teamsOk = (ms.scopes || []).includes('ChannelMessage.Read.All');
+      sessionEl.innerHTML = `<div class="li" style="border:0;padding:0"><span class="li-icon green">${icon('check', 'sm')}</span><div class="li-main"><div class="li-title">Sesión iniciada · ${esc(a.user || '')}</div>
+          <div class="li-sub" style="white-space:normal">${a.via === 'key' ? 'Con llave provisional' : 'Con Microsoft 365'} · Microsoft 365 ${ms.connected ? `conectado (${esc((ms.scopes || []).join(', '))})` : 'sin conectar'}</div></div></div>
+        <div class="btn-row" style="margin-top:10px;flex-wrap:wrap">
+          ${!ms.connected && a.entraConfigured ? `<a class="btn primary sm" href="${esc(sync.loginUrl())}">${icon('globe', 'sm')}Conectar Microsoft 365</a>` : ''}
+          ${ms.connected && !teamsOk ? `<a class="btn sm" href="${esc(sync.loginUrl(true))}" title="Solo cuando TI haya dado el consentimiento">${icon('teams', 'sm')}Activar canales de Teams</a>` : ''}
+          ${ms.connected ? `<button class="btn sm" data-msoff>Desconectar Microsoft 365</button>` : ''}
+          <button class="btn sm" data-logout>Cerrar sesión</button>
+        </div>`;
+      paintSync();
+    }
+
+    async function paintSync() {
+      let st = null;
+      try { st = await request('/sync/status', { system: 'Sincronización' }); } catch { /* sin sesión */ }
+      if (!view.isConnected || !st) return;
+      const ls = store.getSettings().lastSync;
+      syncEl.innerHTML = `<div class="row between" style="gap:8px;flex-wrap:wrap"><div class="small"><b>Sincronización</b> <span class="xs subtle">· en este dispositivo: ${ls ? esc(relTime(ls)) : 'nunca'} · automática cada 15 min en el servidor</span></div>
+          <button class="btn primary sm" data-syncnow ${sync.state.busy ? 'disabled' : ''}>${icon('refresh', 'sm')}${sync.state.busy ? 'Actualizando…' : 'Actualizar ahora'}</button></div>
+        <div style="overflow-x:auto;margin-top:8px"><table class="tbl"><thead><tr><th>Fuente</th><th>Última correcta</th><th style="text-align:right">Registros</th><th>Estado</th><th></th></tr></thead><tbody>
+        ${st.sources.map((x) => { const n = (st.counts || []).filter((c) => (x.source.startsWith('notion') ? c.system === 'notion' : c.system === 'graph')).length; return `<tr>
+          <td class="small">${esc(SOURCE_LABEL[x.source] || x.source)}</td><td class="small">${x.last_ok ? esc(relTime(x.last_ok)) : '—'}</td><td class="small" style="text-align:right">${x.items ?? '—'}</td>
+          <td class="small">${x.last_error ? `<span class="down" title="${esc(x.last_error)}">${esc(x.last_error.slice(0, 70))}</span>` : x.pending ? 'En curso' : x.last_ok ? '<span style="color:var(--green)">Correcta</span>' : '<span class="subtle">Sin datos aún</span>'}</td>
+          <td><button class="btn ghost sm" data-syncone="${esc(x.source)}" aria-label="Actualizar ${esc(SOURCE_LABEL[x.source] || x.source)}">${icon('refresh', 'sm')}</button></td></tr>`; }).join('')}
+        </tbody></table></div>`;
+    }
+    paintSession();
+    const offSync = sync.onSync(() => { if (!view.isConnected) return offSync(); const b = view.querySelector('[data-syncnow]'); if (b) { b.disabled = sync.state.busy; b.lastChild.textContent = sync.state.busy ? 'Actualizando…' : 'Actualizar ahora'; } });
+
+    on(view, 'submit', '[data-keyform]', async (e, f) => {
+      e.preventDefault();
+      try { await sync.loginWithKey(f.querySelector('input').value); toast('Sesión iniciada', 'check'); paintSession(); sync.syncNow().catch(() => {}); } catch (err) { toast(err.message, 'alert'); }
+    });
+    on(view, 'click', '[data-logout]', async () => { await sync.logout().catch(() => {}); toast('Sesión cerrada'); paintSession(); });
+    on(view, 'click', '[data-msoff]', async () => {
+      if (!(await confirmSheet({ title: 'Desconectar Microsoft 365', text: 'Se borran del backend los permisos guardados y se detiene la lectura de correo, calendario, Teams y archivos. No se borra nada en Microsoft 365.', confirm: 'Desconectar', danger: true }))) return;
+      await request('/auth/disconnect', { method: 'POST', body: {}, system: 'Microsoft 365' }).catch((e) => toast(e.message, 'alert'));
+      paintSession();
+    });
+    const runSync = async (source) => {
+      try { const r = await sync.syncNow(source); const errs = Object.values(r?.run?.results || {}).filter((x) => x.error); toast(errs.length ? `Actualizado con ${errs.length} aviso(s)` : `Actualizado · ${r?.changes || 0} cambios`, errs.length ? 'alert' : 'check'); }
+      catch (e) { toast(e.message, 'alert'); }
+      if (view.isConnected) paintSync();
+    };
+    on(view, 'click', '[data-syncnow]', () => runSync());
+    on(view, 'click', '[data-syncone]', (e, b) => runSync(b.dataset.syncone));
+    on(view, 'click', '[data-schema]', async () => {
+      let r;
+      try { r = await request('/notion/schema', { system: 'Notion', timeout: 45000 }); } catch (e) { toast(e.message, 'alert'); return; }
+      openSheet({ title: 'Esquema real de Notion', body: `<p class="xs subtle" style="margin-top:0">Leído ahora de Notion (API ${esc(r.notionVersion)}). «Sin propiedad» = la app no lo rellena porque esa propiedad no existe en la base.</p>
+        ${r.collections.map((c) => c.error ? `<div class="notice" style="margin:8px 0">${icon('alert')}<div><b>${esc(c.collection)}</b>: ${esc(c.error)}</div></div>` : `
+          <details style="margin:8px 0"><summary><b>${esc(c.name)}</b> <span class="xs subtle">· ${Object.keys(c.properties).length} propiedades${c.missing.length ? ` · ${c.missing.length} campos sin propiedad` : ''}</span></summary>
+          <table class="tbl" style="margin-top:6px"><thead><tr><th>Campo de la app</th><th>Propiedad en Notion</th></tr></thead><tbody>${Object.entries(c.mapping).map(([k, m]) => `<tr><td class="small">${esc(k)}</td><td class="small">${m ? `${esc(m.property)} <span class="xs subtle">(${esc(m.type)})</span>` : '<span class="subtle">Sin propiedad</span>'}</td></tr>`).join('')}</tbody></table>
+          <p class="xs subtle">Propiedades sin usar: ${c.unmapped.map(esc).join(', ') || 'ninguna'}</p>
+          ${Object.entries(c.properties).filter(([, p]) => p.options.length).map(([k, p]) => `<p class="xs" style="margin:2px 0"><b>${esc(k)}</b>: ${p.options.map(esc).join(' · ')}</p>`).join('')}</details>`).join('')}` });
+    });
+    on(view, 'click', '[data-auditlog]', async () => {
+      let r;
+      try { r = await request('/audit', { system: 'Backend' }); } catch (e) { toast(e.message, 'alert'); return; }
+      openSheet({ title: 'Registro de auditoría', body: `<p class="xs subtle" style="margin-top:0">Inicios de sesión, sincronizaciones y acciones ejecutadas. No incluye contenido de correos ni secretos.</p><div class="list">${r.items.map((x) => `<div class="li"><div class="li-main"><div class="li-title small">${esc(x.action)} · ${esc(x.result || '')}</div><div class="li-sub">${esc(fmtDateTime(x.at))} · ${esc(x.actor || '')}${x.detail ? ' · ' + esc(x.detail) : ''}</div></div></div>`).join('') || '<p class="small subtle">Sin entradas.</p>'}</div>` });
     });
 
     // Preferencias
@@ -130,7 +225,7 @@ export default {
       store.setSettings({ backendUrl: v }); toast(v ? 'Dirección guardada' : 'Backend eliminado');
     });
     $('[data-test]').addEventListener('click', async (e) => {
-      if (!store.getSettings().backendUrl) { toast('Primero guarda la dirección del backend', 'info'); return; }
+      if (!backendConfigured()) { toast('No hay backend: abre la app conectada', 'info'); return; }
       e.currentTarget.disabled = true;
       const h = await health();
       toast(h ? 'El backend responde' : 'El backend no responde', h ? 'check' : 'alert');

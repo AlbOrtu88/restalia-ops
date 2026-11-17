@@ -49,7 +49,7 @@ function dayList(list, d) {
     <div class="ag-item" data-ev="${x.id}">
       <div class="ag-time">${x.allDay ? 'Día' : fmtTime(x.inicio)}<span>${x.allDay ? '' : fmtTime(x.fin || x.inicio)}</span></div>
       <span class="ag-bar t-${x.tipo}" style="background:var(--c)"></span>
-      <div class="grow"><div style="font-weight:560">${esc(x.titulo)} ${demoBadge(x)}</div>
+      <div class="grow"><div style="font-weight:560">${esc(x.titulo)} ${demoBadge(x)}${x.conflicto ? ` ${badge('Solapa', 'red')}` : ''}</div>
       <div class="small subtle">${LABEL[x.tipo]}${x.ubicacion ? ' · ' + esc(x.ubicacion) : ''}${x.responsable ? ' · ' + esc(x.responsable) : ''}</div></div>
       ${badge(x.estado)}
     </div>`).join('') : empty('Nada programado este día', 'calendar')}</div>`;
@@ -83,9 +83,10 @@ function openEvent(x) {
         <dt>Cuándo</dt><dd style="text-transform:capitalize">${fmtDateLong(x.inicio)}${x.allDay ? '' : ` · ${fmtTime(x.inicio)}–${fmtTime(x.fin || x.inicio)}`}</dd>
         <dt>Lugar</dt><dd>${x.localId ? `<a href="#/locales/${x.localId}">${esc(x.ubicacion)}</a>` : esc(x.ubicacion || '—')}</dd>
         <dt>Responsable</dt><dd>${esc(x.responsable || '—')}</dd>
-        <dt>Origen</dt><dd>${x.demo ? 'Ejemplo DEMO' : x.kind === 'evento' ? 'Creado en esta app (pendiente de sincronizar)' : 'Generado desde ' + x.kind}</dd>
+        <dt>Origen</dt><dd>${x.demo ? 'Ejemplo DEMO' : x.source?.system === 'graph' ? 'Outlook Calendar' : x.source?.system === 'notion' ? `Notion · Agenda Restalia${x.enOutlook ? ' (también en Outlook)' : ''}` : x.kind === 'evento' ? 'Creado en esta app' : 'Generado desde ' + x.kind}${x.url && /^https:\/\//.test(x.url) ? ` · <a href="${esc(x.url)}" target="_blank" rel="noopener">Abrir original</a>` : ''}</dd>
+        ${x.conflicto ? `<dt>Aviso</dt><dd class="down">Se solapa con otro compromiso de la agenda</dd>` : ''}
       </dl>`,
-    footer: `${x.href ? `<a class="btn" href="${x.href}" data-close>Abrir ${x.kind}</a>` : ''}${raw && !raw.demo ? `<button class="btn danger" data-del>${icon('trash', 'sm')}Eliminar</button>` : ''}<button class="btn primary" data-close>Cerrar</button>`,
+    footer: `${x.href ? `<a class="btn" href="${x.href}" data-close>Abrir ${x.kind}</a>` : ''}${raw && !raw.demo && raw.source?.system === 'local' ? `<button class="btn danger" data-del>${icon('trash', 'sm')}Eliminar</button>` : ''}<button class="btn primary" data-close>Cerrar</button>`,
     onMount(el, close) { el.querySelector('[data-del]')?.addEventListener('click', () => { store.remove('eventos', raw.id); close(); toast('Evento eliminado'); }); },
   });
 }
@@ -138,7 +139,7 @@ export default {
     };
     view.innerHTML = `
       ${pageHead('Agenda', 'Reuniones, visitas, auditorías, tareas y fechas límite en un solo calendario.', `<button class="btn primary" data-new>${icon('plus', 'sm')}Nuevo evento</button>`)}
-      ${demoNotice('<b>Agenda de ejemplo.</b> Outlook Calendar y Agenda Restalia (Notion) no están conectados. Al conectarlos se mostrarán aquí sin crear calendarios duplicados.')}
+      ${store.all('eventos').some((r) => r.demo) ? demoNotice('<b>Agenda de ejemplo.</b> Outlook Calendar y Agenda Restalia (Notion) no están conectados. Al conectarlos se mostrarán aquí sin crear calendarios duplicados.') : ''}
       <div class="cal-head" style="margin-top:14px">
         <button class="btn icon sm" data-nav-cal="-1" aria-label="Anterior">${icon('left', 'sm')}</button>
         <button class="btn sm" data-today>Hoy</button>

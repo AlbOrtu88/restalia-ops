@@ -41,12 +41,15 @@ function mostrarDetalle(id, repintar) {
         <dt>De</dt><dd>${esc(msg.de)} ${demoBadge(msg)}</dd>
         <dt>Canal</dt><dd>${esc(canalTexto)}</dd>
         <dt>Fecha</dt><dd>${esc(msg.fecha ? fmtDateTime(msg.fecha) : '')}</dd>
-        <dt>Local</dt><dd>${local}</dd>
+        <dt>Local</dt><dd>${local}${msg.localPorTexto ? ' <span class="xs subtle">(por mención en el texto)</span>' : ''}</dd>
+        ${msg.prioridad ? `<dt>Prioridad</dt><dd>${esc(msg.prioridad)}${msg.plazo ? ` · plazo detectado: ${esc(msg.plazo.texto)}` : ''}</dd>` : ''}
       </dl>
+      ${msg.inferido ? '<p class="xs subtle" style="margin:8px 0 0">Prioridad, solicitudes, plazos y compromisos detectados automáticamente por reglas: son indicios, compruébalos en el original.</p>' : ''}
       <h4 style="margin:14px 0 6px">Extracto</h4><p style="margin:0">${esc(msg.extracto)}</p>
       ${seccion('Compromisos', lista(msg.compromisos))}
       ${seccion('Tareas detectadas', lista(msg.tareasDetectadas))}`,
     footer: `
+      ${msg.url && /^https:\/\//.test(msg.url) ? `<a class="btn" href="${esc(msg.url)}" target="_blank" rel="noopener">${icon('external', 'sm')}Abrir original</a>` : ''}
       ${msg.pendiente ? '<button type="button" class="btn" data-atender>Marcar como atendido</button>' : ''}
       <button type="button" class="btn primary" data-responder>${icon('edit', 'sm')}Preparar respuesta</button>`,
     onMount(sheet, close) {
@@ -83,6 +86,7 @@ function prepararRespuesta(msg) {
           datos: outlook ? { Para: msg.de, Asunto: `RE: ${msg.asunto}`, Mensaje: texto } : { Equipo: msg.equipo, Canal: msg.canalTeams, 'En respuesta a': msg.de, Mensaje: texto },
           resultado: outlook ? 'Se envía la respuesta desde la cuenta corporativa.' : 'Se publica la respuesta en el canal de Teams.',
           estado: 'Pendiente', creada: new Date().toISOString(), origen: 'Alberto', historial: [], ref: { col: 'mensajes', id: msg.id },
+          op: { type: outlook ? 'mail.reply' : 'teams.reply', ref: msg.source?.ref || null }, // el backend no envía nada en esta fase
         }, { prefix: 'apr' });
         store.log(`Alberto preparó una respuesta a «${msg.asunto}» (pendiente de aprobación)`, 'aprobaciones');
         toast('Enviado a Aprobaciones');
@@ -97,7 +101,7 @@ export default {
   render(view, params = []) {
     view.innerHTML = `
       ${pageHead('Comunicaciones', 'Outlook y Teams en un solo lugar.', '')}
-      ${demoNotice('<b>Outlook y Teams no están conectados.</b> Estos mensajes son ejemplos. Responder crea una propuesta en <a href="#/aprobaciones">Aprobaciones</a>; nada se envía sin tu visto bueno.')}
+      ${store.all('mensajes').some((r) => r.demo) ? demoNotice('<b>Outlook y Teams no están conectados.</b> Estos mensajes son ejemplos. Responder crea una propuesta en <a href="#/aprobaciones">Aprobaciones</a>; nada se envía sin tu visto bueno.') : ''}
       <div class="toolbar" style="margin-top:14px">
         ${seg('canal', [{ value: 'todos', label: 'Todos' }, { value: 'outlook', label: 'Outlook', icon: 'mail' }, { value: 'teams', label: 'Teams', icon: 'teams' }], canal)}
         <div class="search">${icon('search', 'sm')}<input type="search" aria-label="Buscar mensajes" placeholder="Buscar por remitente o asunto" value="${esc(consulta)}" data-buscar></div>

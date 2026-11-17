@@ -49,7 +49,7 @@ const R = {
         { label: 'Visitas', value: vis.length, ic: 'pin', foot: (() => { const c = vis.filter((v) => v.resultado === 'Crítica').length; return `${c} ${c === 1 ? 'crítica' : 'críticas'}`; })() },
         { label: 'Incidencias nuevas', value: inc.length, ic: 'alert', foot: `${open.length} abiertas hoy` },
         { label: 'Nota media auditorías', value: media ?? '—', ic: 'audit', foot: `${aud.length} completadas` },
-        { label: 'Tareas vencidas', value: t.filter((x) => isOverdue(x.limite, x.estado === 'Hecha')).length, ic: 'clock', foot: `${t.filter((x) => x.estado !== 'Hecha').length} abiertas` },
+        { label: 'Tareas vencidas', value: t.filter((x) => isOverdue(x.limite, ['Hecha', 'Cancelada'].includes(x.estado))).length, ic: 'clock', foot: `${t.filter((x) => !['Hecha', 'Cancelada'].includes(x.estado)).length} abiertas` },
       ],
       charts: [
         card('Visitas en el periodo', bars(series(store.all('visitas'), 'fecha', r), { color: 'var(--green)', highlightLast: true })),
@@ -60,7 +60,7 @@ const R = {
       table: { title: 'Indicadores', cols: [{ label: 'Indicador', key: 'k' }, { label: 'Valor', key: 'v' }], rows: [
         { k: 'Visitas', v: vis.length }, { k: 'Incidencias nuevas', v: inc.length }, { k: 'Incidencias abiertas', v: open.length },
         { k: 'Auditorías completadas', v: aud.length }, { k: 'Nota media auditorías', v: media ?? '' },
-        { k: 'Tareas abiertas', v: t.filter((x) => x.estado !== 'Hecha').length }, { k: 'Tareas vencidas', v: t.filter((x) => isOverdue(x.limite, x.estado === 'Hecha')).length },
+        { k: 'Tareas abiertas', v: t.filter((x) => !['Hecha', 'Cancelada'].includes(x.estado)).length }, { k: 'Tareas vencidas', v: t.filter((x) => isOverdue(x.limite, ['Hecha', 'Cancelada'].includes(x.estado))).length },
       ] },
     };
   },
@@ -123,7 +123,7 @@ const R = {
   },
   tareas(r) {
     const t = store.all('tareas');
-    const open = t.filter((x) => x.estado !== 'Hecha');
+    const open = t.filter((x) => !['Hecha', 'Cancelada'].includes(x.estado));
     const venc = open.filter((x) => isOverdue(x.limite, false));
     const created = t.filter((x) => inR(x.creada, r));
     const byResp = Object.entries(groupBy(open, 'responsable')).sort((a, b) => b[1].length - a[1].length);
@@ -146,7 +146,7 @@ const R = {
       const aud = store.all('auditorias').filter((a) => a.localId === l.id && a.puntuacion != null).sort((a, b) => toDate(b.fecha) - toDate(a.fecha))[0];
       const inc = store.all('incidencias').filter((i) => i.localId === l.id && OPEN_INC(i));
       const vis = store.all('visitas').filter((v) => v.localId === l.id && inR(v.fecha, r));
-      const acc = store.all('tareas').filter((t) => t.localId === l.id && t.estado !== 'Hecha');
+      const acc = store.all('tareas').filter((t) => t.localId === l.id && !['Hecha', 'Cancelada'].includes(t.estado));
       const riesgo = inc.filter((i) => i.prioridad === 'Crítica').length * 3 + inc.length + (aud && aud.puntuacion < 70 ? 3 : 0) + acc.filter((t) => isOverdue(t.limite, false)).length;
       return { l, nombre: l.nombre, marca: l.marca, estado: l.estado, nota: aud?.puntuacion ?? '', inc: inc.length, vis: vis.length, acc: acc.length, riesgo };
     }).sort((a, b) => b.riesgo - a.riesgo);

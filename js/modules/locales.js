@@ -32,7 +32,7 @@ function list(view) {
 
   view.innerHTML = `
     ${pageHead('Locales', 'Ficha operativa de cada local: visitas, incidencias, auditorías, acciones y documentos.', seg('lview', [{ value: 'tabla', label: 'Tabla', icon: 'table' }, { value: 'tarjetas', label: 'Tarjetas', icon: 'grid' }], st.view))}
-    ${demoNotice('<b>Locales ficticios.</b> Los locales reales llegarán desde la base «Locales» de Notion. La app no crea locales para no duplicar el CRM existente.')}
+    ${store.all('locales').some((r) => r.demo) ? demoNotice('<b>Locales ficticios.</b> Los locales reales llegarán desde la base «Locales» de Notion. La app no crea locales para no duplicar el CRM existente.') : ''}
     <div class="toolbar" style="margin-top:14px">
       <div class="search">${icon('search', 'sm')}<input id="l-q" type="search" placeholder="Buscar por nombre, código, ciudad…" value="${esc(st.q)}"></div>
       <select class="sel" id="l-marca" aria-label="Marca"><option value="">Todas las marcas</option>${marcas.map((m) => `<option ${m === st.marca ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select>
@@ -53,7 +53,7 @@ function detail(view, id) {
   const visitas = store.all('visitas').filter((v) => v.localId === id).sort((a, b) => toDate(b.fecha) - toDate(a.fecha));
   const inc = store.all('incidencias').filter((v) => v.localId === id).sort((a, b) => toDate(b.fecha) - toDate(a.fecha));
   const aud = store.all('auditorias').filter((v) => v.localId === id).sort((a, b) => toDate(b.fecha) - toDate(a.fecha));
-  const tareas = store.all('tareas').filter((v) => v.localId === id && v.estado !== 'Hecha');
+  const tareas = store.all('tareas').filter((v) => v.localId === id && !['Hecha', 'Cancelada'].includes(v.estado));
   const docs = store.all('documentos').filter((d) => d.area === 'Locales' || d.titulo.toLowerCase().includes(l.ciudad.toLowerCase()));
   const notes = l.notas || [];
   const lastScore = aud.find((a) => a.puntuacion != null)?.puntuacion;
