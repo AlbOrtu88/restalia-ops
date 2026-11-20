@@ -12,7 +12,7 @@ import { execute } from './approvals.js';
 import { geoStatus, geocodeLocales } from './geo.js';
 import { vaultGet } from './util.js';
 
-const VERSION = '0.5.0';
+const VERSION = '0.6.0';
 
 async function loadCollection(env, collection, { limit = 200 } = {}) {
   const { results } = await env.DB.prepare('SELECT system, ref, data, updated_at, synced_at FROM records WHERE collection = ? AND deleted = 0 ORDER BY updated_at DESC LIMIT ?').bind(collection, limit).all();

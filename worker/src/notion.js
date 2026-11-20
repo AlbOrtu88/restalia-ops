@@ -24,12 +24,14 @@ export const MAP = {
     marca: ['Marca'], municipio: ['Municipio', 'Ciudad', 'Localidad'], zona: ['Zona'], responsableAsignado: ['Responsable asignado', 'Responsable'],
     gerente: ['Gerente'], franquiciado: ['Franquiciado / titular'], prioridad: ['Prioridad'], proximaVisita: ['Próxima visita'],
     notasGenerales: ['Notas generales'], codigo: ['Código', 'Codigo'] },
-  visitas: { titulo: ['$title'], estado: ['Estado'], fecha: ['Fecha'], localNombre: ['Local'], marca: ['Marca'], observaciones: ['Observaciones'],
+  // «Local»: relación con Locales (recomendado). Si aún es texto, o la columna antigua se renombró a «Local (texto)», se lee el nombre.
+  visitas: { titulo: ['$title'], estado: ['Estado'], fecha: ['Fecha'], localRel: ['Local'], localNombre: ['Local (texto)', 'Local'], marca: ['Marca'], observaciones: ['Observaciones'],
     personas: ['Personas presentes'], resultado: ['Resultado general'], motivo: ['Motivo', 'Tipo'] },
   incidencias: { titulo: ['$title'], categoria: ['Categoría'], accion: ['Acción correctiva'], estado: ['Estado'], prioridad: ['Prioridad', 'Gravedad'],
-    localNombre: ['Local'], fecha: ['Fecha', 'Fecha detección', 'Fecha apertura'], limite: ['Fecha límite', 'Fecha compromiso'], descripcion: ['Descripción'], responsable: ['Responsable'] },
-  tareas: { titulo: ['Acción', '$title'], estado: ['Estado'], evidencia: ['Evidencia de cierre'], limite: ['Fecha compromiso'], localNombre: ['Local'],
-    descripcion: ['Notas'], origen: ['Origen'], responsable: ['Responsable'], prioridad: ['Prioridad'] },
+    localRel: ['Local'], localNombre: ['Local (texto)', 'Local'], fecha: ['Fecha', 'Fecha detección', 'Fecha apertura'], limite: ['Fecha límite', 'Fecha compromiso'], descripcion: ['Descripción'], responsable: ['Responsable'],
+    severidad: ['Severidad', 'Gravedad'], fechaObjetivo: ['Fecha objetivo'], causaRaiz: ['Causa raíz', 'Causa raiz'], siguientePaso: ['Siguiente paso'] },
+  tareas: { titulo: ['Acción', '$title'], estado: ['Estado'], evidencia: ['Evidencia de cierre'], limite: ['Fecha compromiso'], localRel: ['Local'], localNombre: ['Local (texto)', 'Local'],
+    descripcion: ['Notas'], origen: ['Origen'], responsable: ['Responsable'], prioridad: ['Prioridad'], siguientePaso: ['Siguiente paso'] },
   contactos: { nombre: ['Contacto', '$title'], email: ['Email'], localNombre: ['Local'], notas: ['Notas'], relacion: ['Relación'], rol: ['Rol'], telefono: ['Teléfono'] },
   aprobaciones: { accion: ['Solicitud', '$title'], estadoNotion: ['Estado'], creada: ['Fecha solicitud'], resuelta: ['Fecha resolución'], motivo: ['Motivo'],
     registro: ['Registro afectado'], tipo: ['Tipo de cambio'] },
@@ -44,8 +46,16 @@ export const MAP = {
 export const WRITABLE = {
   locales: ['estado', 'proximaVisita', 'notasGenerales'],
   tareas: ['estado', 'limite', 'descripcion', 'evidencia'],
-  incidencias: ['estado', 'accion'],
+  incidencias: ['estado', 'accion', 'causaRaiz', 'siguientePaso', 'fechaObjetivo', 'severidad'],
   visitas: ['estado', 'observaciones', 'resultado'],
+};
+
+// Campos que la app puede rellenar al CREAR un registro (vía Aprobaciones). Los que no existan en Notion o no encajen se omiten y se informa.
+export const CREATABLE = {
+  tareas: ['titulo', 'estado', 'limite', 'localRel', 'localNombre', 'descripcion', 'prioridad', 'origen', 'siguientePaso'],
+  visitas: ['titulo', 'fecha', 'localRel', 'localNombre', 'observaciones', 'resultado', 'motivo', 'personas', 'estado'],
+  incidencias: ['titulo', 'categoria', 'accion', 'estado', 'prioridad', 'localRel', 'localNombre', 'fecha', 'limite', 'descripcion', 'severidad', 'fechaObjetivo', 'causaRaiz', 'siguientePaso'],
+  historial: ['texto', 'fecha', 'registro', 'campo', 'aprobacion'],
 };
 
 export function dataSources(env) {
@@ -120,13 +130,14 @@ export function normalize(col, page) {
         codigo: m.codigo, ultimaVisita: toIso(dateStart(m.ultimaVisita)), notionEditedAt: page.last_edited_time || null };
     }
     case 'visitas': return { ...base, titulo: m.titulo, estado: m.estado, fecha: toIso(dateStart(m.fecha)), localNombre: rel(m.localNombre) ? null : txt(m.localNombre),
-      localId: rel(m.localNombre), marca: txt(m.marca), observaciones: m.observaciones, personas: txt(m.personas), resultado: m.resultado,
+      localId: rel(m.localRel) || rel(m.localNombre), marca: txt(m.marca), observaciones: m.observaciones, personas: txt(m.personas), resultado: m.resultado,
       motivo: txt(m.motivo) || m.titulo, responsable: 'Alberto', fotos: [], incidencias: [], acciones: [] };
     case 'incidencias': return { ...base, titulo: m.titulo, categoria: m.categoria, accion: m.accion, estado: m.estado || 'Sin estado en Notion', prioridad: m.prioridad,
-      localNombre: rel(m.localNombre) ? null : txt(m.localNombre), localId: rel(m.localNombre), fecha: toIso(dateStart(m.fecha)) || page.created_time,
-      limite: toIso(dateStart(m.limite)), descripcion: m.descripcion, responsable: txt(m.responsable), seguimiento: [] };
+      localNombre: rel(m.localNombre) ? null : txt(m.localNombre), localId: rel(m.localRel) || rel(m.localNombre), fecha: toIso(dateStart(m.fecha)) || page.created_time,
+      limite: toIso(dateStart(m.limite)), descripcion: m.descripcion, responsable: txt(m.responsable), severidad: txt(m.severidad) || null,
+      fechaObjetivo: toIso(dateStart(m.fechaObjetivo)), causaRaiz: m.causaRaiz || null, siguientePaso: m.siguientePaso || null, notionEditedAt: page.last_edited_time || null, seguimiento: [] };
     case 'tareas': return { ...base, titulo: m.titulo, estado: m.estado, evidencia: m.evidencia, limite: toIso(dateStart(m.limite)), localNombre: rel(m.localNombre) ? null : txt(m.localNombre),
-      localId: rel(m.localNombre), descripcion: m.descripcion, origenNotion: m.origen, responsable: txt(m.responsable) || 'Alberto', prioridad: m.prioridad || 'Media',
+      localId: rel(m.localRel) || rel(m.localNombre), siguientePaso: m.siguientePaso || null, descripcion: m.descripcion, origenNotion: m.origen, responsable: txt(m.responsable) || 'Alberto', prioridad: m.prioridad || 'Media',
       creada: page.created_time, proyectoId: null, evidencias: [] };
     case 'contactos': return { ...base, nombre: m.nombre, email: m.email, telefono: m.telefono, localNombre: txt(m.localNombre), notas: m.notas, relacion: m.relacion, rol: m.rol };
     case 'aprobaciones': return { ...base, accion: m.accion, sistema: 'Notion', soloLectura: true, motivo: m.motivo,
@@ -227,34 +238,55 @@ export async function updatePage(env, budget, col, pageId, changes, { expectedEd
     const m = sch.mapping[field];
     if (!m) throw new HttpError(422, `La base «${sch.name}» no tiene propiedad para «${field}»`);
     const def = sch.properties[m.property];
+    if (value == null || value === '') { // vaciar el campo (solo tipos que lo admiten)
+      const empty = { rich_text: { rich_text: [] }, date: { date: null }, select: { select: null } }[def.type];
+      if (!empty) throw new HttpError(422, `«${m.property}» no se puede dejar vacío`);
+      properties[m.property] = empty; continue;
+    }
     if (['status', 'select'].includes(def.type) && !def.options.includes(value)) throw new HttpError(422, `«${value}» no es una opción válida de ${m.property} (${def.options.join(', ')})`);
     properties[m.property] = toNotionValue(def.type, value);
   }
   return api(env, budget, 'PATCH', `/pages/${pageId}`, { properties });
 }
 
+/**
+ * Crea una página. Solo campos de CREATABLE. Un campo sin propiedad en Notion, de tipo que no encaja (p. ej. «Local» como texto
+ * cuando llega el id del local) o con una opción que no existe se OMITE (no se inventa nada) y se devuelve en `skipped`.
+ */
 export async function createPage(env, budget, col, fields) {
   const sch = await schema(env, budget, col);
   const properties = {};
+  const skipped = [];
   for (const [field, value] of Object.entries(fields)) {
     if (value == null || value === '') continue;
+    if (!(CREATABLE[col] || []).includes(field)) throw new HttpError(422, `El campo «${field}» no se puede rellenar al crear en ${sch.name}`);
     const m = sch.mapping[field];
-    if (!m) continue; // campo sin propiedad real: no se inventa
+    if (!m) { skipped.push(field); continue; }
     const def = sch.properties[m.property];
-    if (['status', 'select'].includes(def.type) && !def.options.includes(value)) throw new HttpError(422, `«${value}» no es una opción válida de ${m.property}`);
-    properties[m.property] = toNotionValue(def.type, value);
+    if (properties[m.property]) continue; // la misma columna ya la rellenó otro campo (p. ej. «Local» como relación)
+    if (field === 'localRel' && def.type !== 'relation') { skipped.push(field); continue; }
+    if (field === 'localNombre' && !['rich_text', 'select', 'title'].includes(def.type)) { skipped.push(field); continue; }
+    if (['status', 'select'].includes(def.type) && !def.options.includes(value)) { skipped.push(`${field} («${value}» no es opción de ${m.property})`); continue; }
+    try { properties[m.property] = toNotionValue(def.type, value, { datetime: field === 'fecha' }); }
+    catch { skipped.push(field); }
   }
   if (!Object.values(sch.mapping).some((x) => x && x.type === 'title' && properties[x.property])) throw new HttpError(422, 'Falta el título');
-  return api(env, budget, 'POST', '/pages', { parent: { type: 'data_source_id', data_source_id: dataSources(env)[col] }, properties });
+  const page = await api(env, budget, 'POST', '/pages', { parent: { type: 'data_source_id', data_source_id: dataSources(env)[col] }, properties });
+  return { ...page, skipped };
 }
 
-function toNotionValue(type, v) {
+function toNotionValue(type, v, { datetime = false } = {}) {
   switch (type) {
+    case 'relation': {
+      const ids = (Array.isArray(v) ? v : [v]).filter((x) => /^[0-9a-f-]{32,36}$/i.test(String(x)));
+      if (!ids.length) throw new HttpError(422, 'Relación no válida');
+      return { relation: ids.map((id) => ({ id })) };
+    }
     case 'title': return { title: [{ text: { content: String(v).slice(0, 1900) } }] };
     case 'rich_text': return { rich_text: [{ text: { content: String(v).slice(0, 1900) } }] };
     case 'status': return { status: { name: v } };
     case 'select': return { select: { name: v } };
-    case 'date': return { date: { start: String(v).slice(0, 10) } };
+    case 'date': return { date: { start: datetime && String(v).includes('T') ? new Date(v).toISOString() : String(v).slice(0, 10) } };
     case 'email': return { email: v };
     case 'phone_number': return { phone_number: v };
     case 'number': return { number: Number(v) };

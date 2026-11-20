@@ -15,7 +15,7 @@ const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toL
 const MAX_DOCS = 1500;
 
 /** Enlaza registros con su local por nombre (Notion guarda «Local» como texto) y marca duplicados/conflictos de agenda. */
-function derive() {
+export function derive() {
   const locales = store._raw('locales').filter((l) => l.source?.system === 'notion');
   const byName = new Map(locales.map((l) => [norm(l.nombre), l.id]));
   const findLocal = (txt) => {
@@ -27,6 +27,17 @@ function derive() {
   };
   for (const col of ['visitas', 'incidencias', 'tareas', 'eventos', 'contactos']) {
     store._mutate(col, (r) => { if (r.source?.system === 'notion' && !r.localId && r.localNombre) r.localId = findLocal(r.localNombre); });
+  }
+  // Visitas e incidencias creadas en la app y dadas de alta en Notion: cuando la página llega sincronizada, se oculta la copia local
+  // (el registro de Notion pasa a ser el bueno) y se le copian las fotos y el id de la app para no perder nada.
+  for (const col of ['visitas', 'incidencias']) {
+    const byRef = new Map(store._raw(col).filter((r) => r.source?.system === 'notion').map((r) => [r.id, r]));
+    store._mutate(col, (r) => {
+      if (r.source?.system === 'notion' || !r.notionRef) return;
+      const twin = byRef.get(r.notionRef);
+      r.hidden = !!twin;
+      if (twin) { twin.appId = r.id; if (!twin.fotos?.length && r.fotos?.length) twin.fotos = r.fotos; if (!twin.evidencias?.length && r.evidencias?.length) twin.evidencias = r.evidencias; }
+    });
   }
   // Correos y mensajes: relación con un local solo si el nombre del local aparece literalmente (evidencia suficiente).
   if (locales.length) {

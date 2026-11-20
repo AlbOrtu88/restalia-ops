@@ -52,6 +52,25 @@ d = await (await req('/api/data?since=1970-01-01', { cookie })).json();
 ok(d.records.some((x) => x.system === 'ics' && x.deleted) && !by('eventos').some((x) => x.data.titulo === 'Reunión puntual FICTICIA'), 'ICS: evento eliminado en Outlook → borrado en la app');
 j = await (await fetch(B + '/api/health')).json(); ok(j.calendar === true && j.configured.outlookIcs === true && !JSON.stringify(j).includes('8790'), 'health: calendario publicado activo sin exponer el enlace');
 
+// 3c. Fase 4: «Local» como relación, campos nuevos de incidencias y alta de visitas/incidencias en Notion
+const incN = by('incidencias').find((x) => x.ref === 'dddddddd-0000-0000-0000-000000000001');
+ok(incN?.data.localId === 'bbbbbbbb-0000-0000-0000-000000000001' && incN.data.severidad === 'Alta' && incN.data.causaRaiz === 'Junta gastada' && incN.data.siguientePaso === 'Llamar al técnico' && incN.data.fechaObjetivo, 'Incidencias: «Local» como relación → localId; severidad, causa raíz, siguiente paso y fecha objetivo');
+const LOC1 = 'bbbbbbbb-0000-0000-0000-000000000001';
+r = await req('/api/approvals/execute', { method: 'POST', cookie, body: { id: 'apr-v', accion: 'Crear visita', op: { type: 'notion.create', collection: 'visitas', fields: { titulo: 'Visita rutinaria · Local Prueba 1', fecha: '2026-11-21T09:30:00.000Z', localRel: LOC1, localNombre: 'Local Prueba 1', observaciones: 'Todo correcto', resultado: 'Satisfactoria', motivo: 'Visita rutinaria' } } } });
+j = await r.json();
+let created = (await (await fetch(M + '/__created')).json()).find((x) => x.parent?.data_source_id === 'ds-visitas');
+ok(r.status === 200 && created?.properties['Local']?.relation?.[0]?.id === LOC1 && created.properties['Local (texto)']?.rich_text && created.properties['Fecha'].date.start.includes('T09:30') && !created.properties['Resultado general'] && j.skipped.some((x) => x.startsWith('resultado')),
+  `Visita creada en Notion enlazada al local (relación), con hora y sin inventar opciones (omitidos: ${JSON.stringify(j.skipped)})`);
+r = await req('/api/approvals/execute', { method: 'POST', cookie, body: { id: 'apr-i', accion: 'Crear incidencia', op: { type: 'notion.create', collection: 'incidencias', fields: { titulo: 'Puerta FICTICIA', localRel: LOC1, localNombre: 'Local Prueba 1', categoria: 'Mantenimiento', prioridad: 'Alta', severidad: 'Media', causaRaiz: 'Golpe', siguientePaso: 'Pedir presupuesto', fechaObjetivo: '2026-11-30' } } } });
+created = (await (await fetch(M + '/__created')).json()).filter((x) => x.parent?.data_source_id === 'ds-incidencias').pop();
+ok(r.status === 200 && created?.properties['Local'].relation[0].id === LOC1 && created.properties['Severidad'].select.name === 'Media' && created.properties['Causa raíz'] && created.properties['Fecha objetivo'].date.start === '2026-11-30', 'Incidencia creada con relación, severidad, causa raíz y fecha objetivo');
+r = await req('/api/approvals/execute', { method: 'POST', cookie, body: { id: 'apr-i2', accion: 'Crear incidencia', op: { type: 'notion.create', collection: 'incidencias', fields: { titulo: 'x', props: 'hack' } } } });
+ok(r.status === 422, 'alta con campo no permitido → 422');
+r = await req('/api/approvals/execute', { method: 'POST', cookie, body: { id: 'apr-c', accion: 'Crear local', op: { type: 'notion.create', collection: 'locales', fields: { nombre: 'x' } } } });
+ok(r.status === 422, 'crear locales desde la app → 422');
+r = await req('/api/approvals/execute', { method: 'POST', cookie, body: { id: 'apr-u', accion: 'Causa raíz', op: { type: 'notion.update', collection: 'incidencias', ref: 'dddddddd-0000-0000-0000-000000000001', changes: { causaRaiz: 'Junta nueva', siguientePaso: 'Cerrar', fechaObjetivo: null } } } });
+ok(r.status === 200, 'Incidencias: causa raíz y siguiente paso modificables tras aprobación');
+
 // 4. Borrado en origen → tombstone en la sincronización completa
 await fetch(M + '/__del', { method: 'POST' });
 await req('/api/sync/run', { method: 'POST', body: { source: 'notion:tareas', full: true }, cookie });

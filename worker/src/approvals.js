@@ -28,7 +28,7 @@ export async function execute(env, body, session) {
     if (col === 'locales' && !op.baseEditedAt) throw new HttpError(422, 'Falta la versión del local (baseEditedAt); sincroniza y vuelve a proponer el cambio.');
     result = await updatePage(env, budget, col, op.ref, op.changes || {}, { expectedEditedAt: op.baseEditedAt || null });
   } else if (op.type === 'notion.create') {
-    if (col !== 'tareas') throw new HttpError(422, 'Desde la app solo se pueden crear acciones/tareas en Notion');
+    if (!['tareas', 'visitas', 'incidencias'].includes(col)) throw new HttpError(422, 'Desde la app solo se pueden crear visitas, incidencias y acciones en Notion');
     result = await createPage(env, budget, col, op.fields || {});
   } else throw new HttpError(422, `Operación desconocida: ${op.type}`);
   await audit(env, 'approval.executed', { actor, target: result.id, detail: `${op.type} ${col} ${JSON.stringify(op.changes || Object.keys(op.fields || {}))}` });
@@ -43,5 +43,5 @@ export async function execute(env, body, session) {
       historial = 'registrado';
     } catch (e) { historial = `no registrado: ${e.message}`; }
   }
-  return { ok: true, ref: result.id, url: result.url, collection: NOTION_COLLECTIONS[col].name, historial };
+  return { ok: true, ref: result.id, url: result.url, collection: NOTION_COLLECTIONS[col].name, historial, skipped: result.skipped || [] };
 }

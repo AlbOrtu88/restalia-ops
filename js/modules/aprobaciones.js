@@ -24,8 +24,11 @@ async function approve(a) {
   const hist = [...(a.historial || []), histEntry('Aprobada')];
   try {
     const r = await request('/approvals/execute', { method: 'POST', body: { id: a.id, sistema: a.sistema, accion: a.accion, datos: a.datos, ref: a.ref || null, op: a.op || null }, system: a.sistema });
-    store.update('aprobaciones', a.id, { estado: 'Ejecutada', historial: [...hist, histEntry('Ejecutada', r?.ref ? `Ref. ${r.ref}` : '')], resuelta: new Date().toISOString() });
-    toast(`Ejecutada en ${a.sistema}`);
+    const omitidos = r?.skipped?.length ? `Sin rellenar en Notion: ${r.skipped.join(', ')}` : '';
+    store.update('aprobaciones', a.id, { estado: 'Ejecutada', historial: [...hist, histEntry('Ejecutada', [r?.ref ? `Ref. ${r.ref}` : '', omitidos].filter(Boolean).join(' · '))], resuelta: new Date().toISOString(), refUrl: r?.url || a.refUrl || null });
+    // Alta en Notion: el registro de la app guarda la página creada y se oculta cuando llega en la siguiente sincronización (sin duplicados).
+    if (a.op?.type === 'notion.create' && a.ref?.col && a.ref?.id && r?.ref) store.update(a.ref.col, a.ref.id, { notionRef: r.ref, notionUrl: r.url || null });
+    toast(omitidos ? `Ejecutada en ${a.sistema} · ${r.skipped.length} campo(s) sin rellenar` : `Ejecutada en ${a.sistema}`);
   } catch (e) {
     if (e instanceof NotConnectedError) {
       store.update('aprobaciones', a.id, { estado: 'En cola (sin conexión)', historial: [...hist, histEntry('En cola', e.message)], resuelta: new Date().toISOString() });
