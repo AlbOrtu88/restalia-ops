@@ -1,6 +1,6 @@
 # Backend de Restalia Operations AI · administración
 
-Versión 0.4 · noviembre de 2026. Código en [`worker/`](../worker). Arquitectura general en [arquitectura.md](arquitectura.md).
+Versión 0.5 · noviembre de 2026. Código en [`worker/`](../worker). Arquitectura general en [arquitectura.md](arquitectura.md).
 
 ## 1. Qué hay desplegado
 
@@ -37,6 +37,7 @@ Versión 0.4 · noviembre de 2026. Código en [`worker/`](../worker). Arquitectu
 | `NOTION_TOKEN` | Secreto | **Alberto** | Token de la integración interna de Notion |
 | `MS_CLIENT_ID` | Secreto | **Alberto / TI** | Id. de aplicación (cliente) del registro de Entra ID |
 | `MS_CLIENT_SECRET` | Secreto | **Alberto / TI** | Valor del secreto de cliente de Entra ID |
+| `OUTLOOK_ICS_URL` | Secreto | **Alberto** (opcional) | Enlace ICS de «Publicar un calendario» de Outlook. Agenda de Outlook/Teams sin Entra ID (ver 4.4) |
 | `ACCESS_KEY` | Secreto | Alberto (opcional) | Llave provisional de acceso |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | Secreto | Alberto (opcional) | IA externa. Sin clave se usa Cloudflare Workers AI |
 | `AI_PROVIDER`, `AI_MODEL` | Variable | Opcional | Forzar proveedor/modelo (`anthropic`, `openai`, `workers-ai`) |
@@ -67,6 +68,18 @@ Nada de esto está en el repositorio. Los IDs de D1 de `wrangler.toml` son recur
 8. En la app conectada → Configuración → **Entrar con Microsoft 365**. Cuando TI haya concedido el consentimiento, pulsa **Activar canales de Teams**.
 
 Texto para TI: *«Necesito registrar una aplicación de un solo tenant, "Restalia Operations AI", con permisos delegados de solo lectura (User.Read, Mail.Read, Calendars.Read, Files.Read.All, Chat.Read, Team.ReadBasic.All, Channel.ReadBasic.All, ChannelMessage.Read.All, offline_access). Solo accede a mi propio buzón, calendario, archivos y equipos a los que pertenezco. No pide permisos de escritura ni de aplicación. ChannelMessage.Read.All requiere consentimiento de administrador. Redirecciones: las dos URL de /api/auth/callback indicadas.»*
+
+### 4.4 Agenda de Outlook/Teams sin Entra ID (calendario publicado)
+Si no puedes registrar la app en Entra ID, la agenda se lee con el enlace ICS de Outlook. Es **solo lectura** y no necesita a TI.
+1. En Safari u otro navegador (en el iPhone, «aA» → *Solicitar sitio web de escritorio*): https://outlook.office.com → ⚙️ Configuración → **Calendario** → **Calendarios compartidos** → *Publicar un calendario* → Calendario + **Puede ver todos los detalles** → **Publicar** → copia el **enlace ICS**.
+2. Cloudflare → Workers y Pages → `restalia-ops` → Configuración → Variables y secretos → **Agregar** → Secreto `OUTLOOK_ICS_URL` con ese enlace → Implementar.
+3. El backend lo descarga cada 15 minutos (y con «Actualizar ahora»), expande las series (30 días atrás y 120 adelante) y borra de la app lo que desaparezca de Outlook. El enlace nunca llega a la app ni al registro de auditoría.
+
+Quien tenga el enlace puede ver el calendario: no lo compartas. Para anularlo, *Despublicar* en el mismo sitio de Outlook (y pon el nuevo enlace en Cloudflare si vuelves a publicar).
+
+**Crear visitas sin permisos de escritura:** en la ficha del local, **Programar visita** (tipo, día, hora, duración y notas) abre Outlook con el evento ya relleno (`outlook.office.com/calendar/0/deeplink/compose`) o descarga un `.ics` para el calendario del iPhone. Tú pulsas Guardar. El cuerpo del evento lleva la marca `restalia-local:<id>`, que enlaza la cita con su ficha («Próximas citas»). Sin marca, una cita se enlaza a un local si la ubicación contiene su calle o el título contiene su nombre completo. No se envían invitaciones.
+
+Crear y modificar eventos directamente desde la app (sin abrir Outlook) necesita el registro de Entra ID con `Calendars.ReadWrite` en lugar de `Calendars.Read`.
 
 ### 4.3 IA (opcional)
 Sin hacer nada, el asistente usa Cloudflare Workers AI (Llama 3.3 70B), que procesa los datos en la infraestructura de Cloudflare. Para usar Claude, añade el secreto `ANTHROPIC_API_KEY` (y, si quieres, la variable `AI_MODEL`).

@@ -27,7 +27,11 @@ const by = (c) => d.records.filter((x) => x.collection === c && !x.deleted);
 ok(by('tareas').length === 2 && by('locales').length === 1, 'Notion: 2 tareas (con paginación) y 1 local');
 const t1 = by('tareas').find((x) => x.ref === 'aaaaaaaa-0000-0000-0000-000000000001');
 ok(t1?.data.titulo === 'Revisar cámara FICTICIA' && t1.data.estado === 'Pendiente' && t1.data.localNombre === 'Local Prueba 1' && t1.updatedAt && t1.syncedAt, 'mapeo de tarea con source.updatedAt/syncedAt');
-ok(by('eventos').length === 1 && by('eventos')[0].data.inicio.endsWith('Z') && by('eventos')[0].data.esReunion, 'Outlook: evento normalizado (UTC, reunión)');
+const evG = by('eventos').filter((x) => x.system === 'graph'), evI = by('eventos').filter((x) => x.system === 'ics');
+ok(evG.length === 1 && evG[0].data.inicio.endsWith('Z') && evG[0].data.esReunion, 'Outlook: evento normalizado (UTC, reunión)');
+const vis = evI.find((x) => x.data.titulo.startsWith('Visita operativa'));
+ok(evI.length === 6 && vis && /T09:00:00|T10:00:00/.test(vis.data.inicio) && vis.data.ubicacion === 'Calle Ficticia 1, Majadahonda' && vis.data.descripcion.includes('restalia-local:'), `Calendario publicado (ICS): visita en UTC con ubicación y marca del local (${evI.length} eventos)`);
+ok(evI.filter((x) => x.data.titulo === 'Comité FICTICIO').length === 4 && evI.find((x) => x.data.titulo === 'Comité FICTICIO').data.online, 'ICS: serie semanal expandida (4) con enlace de Teams');
 const mail = by('mensajes').find((x) => x.data.canal === 'outlook');
 ok(mail?.data.pendiente && mail.data.plazo?.texto === 'antes del jueves' && mail.data.inferido, 'correo: solicitud y plazo detectados (inferidos)');
 ok(by('mensajes').some((x) => x.data.canal === 'teams' && x.data.pendiente), 'Teams chat: solicitud detectada');
@@ -40,6 +44,13 @@ d = await (await req(`/api/data?since=${encodeURIComponent(cur)}`, { cookie })).
 ok(d.records.filter((x) => x.syncedAt > cur).length === 0, `segunda sync sin cambios → 0 registros nuevos (${d.records.length} en el límite)`);
 const all = await (await req('/api/data?since=1970-01-01', { cookie })).json();
 const keys = all.records.map((x) => x.system + x.ref); ok(new Set(keys).size === keys.length, 'sin duplicados por (system, ref)');
+
+// 3b. ICS: un evento que desaparece del calendario publicado se borra en la app
+await fetch(M + '/__ics-cancel');
+await req('/api/sync/run', { method: 'POST', body: { source: 'ics' }, cookie });
+d = await (await req('/api/data?since=1970-01-01', { cookie })).json();
+ok(d.records.some((x) => x.system === 'ics' && x.deleted) && !by('eventos').some((x) => x.data.titulo === 'Reunión puntual FICTICIA'), 'ICS: evento eliminado en Outlook → borrado en la app');
+j = await (await fetch(B + '/api/health')).json(); ok(j.calendar === true && j.configured.outlookIcs === true && !JSON.stringify(j).includes('8790'), 'health: calendario publicado activo sin exponer el enlace');
 
 // 4. Borrado en origen → tombstone en la sincronización completa
 await fetch(M + '/__del', { method: 'POST' });
