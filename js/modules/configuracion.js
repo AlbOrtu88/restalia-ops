@@ -70,7 +70,7 @@ export default {
               <div class="xs subtle" style="margin-top:4px;white-space:normal">Necesita: ${a.requires.map(esc).join(' · ')}</div></div>
             <span data-status="${ADAPTER_KEY[a.id]}">${badge('Comprobando…', '')}</span>
           </div>`).join('')}</div>
-        <div class="btn-row" style="margin-top:12px;flex-wrap:wrap"><button class="btn sm" data-schema>${icon('db', 'sm')}Esquema real de Notion</button><button class="btn sm" data-auditlog>${icon('history', 'sm')}Registro de auditoría</button></div>
+        <div class="btn-row" style="margin-top:12px;flex-wrap:wrap"><button class="btn sm" data-notioncheck>${icon('check', 'sm')}Comprobar conexión con Notion</button><button class="btn sm" data-schema>${icon('db', 'sm')}Esquema real de Notion</button><button class="btn sm" data-auditlog>${icon('history', 'sm')}Registro de auditoría</button></div>
         <details style="margin-top:12px"><summary class="small" style="cursor:pointer">Avanzado: dirección del backend</summary>
           <p class="xs subtle">Vacío = automático (la app conectada usa su propio dominio). Solo cámbialo si el backend está en otra dirección.</p>
           <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap">
@@ -147,7 +147,7 @@ export default {
           <div class="btn-row" style="margin-top:10px;flex-wrap:wrap">
             ${a.entraConfigured ? `<a class="btn primary" href="${esc(sync.loginUrl())}">${icon('globe', 'sm')}Entrar con Microsoft 365</a>` : `<span class="xs subtle">Microsoft 365: pendiente del registro de la app en Entra ID.</span>`}
           </div>
-          ${a.keyLogin ? `<form class="row" data-keyform style="gap:8px;margin-top:10px;flex-wrap:wrap;align-items:flex-end"><div class="field" style="flex:1;min-width:200px;margin:0"><label for="f-key">Llave de acceso provisional</label><input class="input" id="f-key" type="password" autocomplete="current-password" required minlength="24"></div><button class="btn">Entrar con llave</button></form>` : ''}`;
+          ${a.keyLogin ? `<form class="row" data-keyform style="gap:8px;margin-top:10px;flex-wrap:wrap;align-items:flex-end"><div class="field" style="flex:1;min-width:200px;margin:0"><label for="f-key">Llave de acceso provisional</label><input class="input" id="f-key" type="password" autocomplete="current-password" required minlength="24"></div><button class="btn">Entrar con llave</button></form>` : (!a.entraConfigured ? `<div class="notice" style="margin-top:10px">${icon('info')}<div><b>No hay ninguna forma de entrar todavía.</b> La llave de acceso está desactivada: en Cloudflare, el secreto <code>ACCESS_KEY</code> del Worker debe tener 24 caracteres o más. También puedes completar el registro de Microsoft 365 (<code>MS_CLIENT_ID</code> y <code>MS_CLIENT_SECRET</code>).</div></div>` : '')}`;
         return;
       }
       const ms = a.microsoft || {};
@@ -197,6 +197,19 @@ export default {
     };
     on(view, 'click', '[data-syncnow]', () => runSync());
     on(view, 'click', '[data-syncone]', (e, b) => runSync(b.dataset.syncone));
+    // Comprobación de extremo a extremo: Notion en vivo frente a la copia del backend (no basta con /api/health).
+    on(view, 'click', '[data-notioncheck]', async (e, b) => {
+      let r;
+      b.disabled = true;
+      try { r = await request('/notion/check', { system: 'Notion', timeout: 30000 }); } catch (err) { toast(err.message, 'alert'); return; } finally { b.disabled = false; }
+      const row = (k, v) => `<dt>${k}</dt><dd>${v}</dd>`;
+      openSheet({ title: 'Conexión con Notion', body: r.ok ? `<div class="notice info">${icon('check')}<div><b>Conexión correcta.</b> Notion respondió en ${r.ms} ms.</div></div>
+        <dl class="props" style="margin-top:12px">${row('Locales en Notion', `${r.notion.locales}${r.notion.complete ? '' : '+'}`)}${row('Locales en la app (backend)', r.backend.locales)}
+        ${row('Con «Responsable asignado»', r.notion.conResponsableAsignado)}${row('Última sincronización', r.backend.lastSync ? esc(fmtDateTime(r.backend.lastSync)) : '—')}
+        ${row('Coinciden', r.inSync == null ? '—' : r.inSync ? badge('Sí', 'green') : badge('No: pulsa Actualizar ahora', 'amber'))}
+        ${r.sample ? row('Ejemplo', `${esc(r.sample.nombre)}<br><span class="small subtle">${[r.sample.marca, r.sample.municipio, r.sample.zona, r.sample.responsableAsignado && 'Responsable: ' + r.sample.responsableAsignado].filter(Boolean).map(esc).join(' · ')}</span>`) : ''}</dl>`
+        : `<div class="notice">${icon('alert')}<div><b>Sin conexión con Notion.</b> ${esc(r.error || 'Error desconocido')}</div></div>` });
+    });
     on(view, 'click', '[data-schema]', async () => {
       let r;
       try { r = await request('/notion/schema', { system: 'Notion', timeout: 45000 }); } catch (e) { toast(e.message, 'alert'); return; }

@@ -19,8 +19,11 @@ export const NOTION_COLLECTIONS = {
 // Campo de la app ← nombres de propiedad de Notion (en orden de preferencia). '$title' = la propiedad de tipo título.
 // Los nombres proceden de los esquemas conocidos (documento de traspaso); los marcados «opcional» se usan solo si existen.
 export const MAP = {
+  // «Responsable asignado» (quién lleva el local en Restalia) es distinto de «Gerente» (quien dirige el local): nunca se mezclan.
   locales: { nombre: ['$title'], direccion: ['Dirección'], estado: ['Estado'], ultimaVisita: ['Fecha última visita'], formato: ['Formato'],
-    marca: ['Marca'], ciudad: ['Ciudad', 'Localidad'], responsable: ['Responsable', 'Gerente'], codigo: ['Código', 'Codigo'] },
+    marca: ['Marca'], municipio: ['Municipio', 'Ciudad', 'Localidad'], zona: ['Zona'], responsableAsignado: ['Responsable asignado', 'Responsable'],
+    gerente: ['Gerente'], franquiciado: ['Franquiciado / titular'], prioridad: ['Prioridad'], proximaVisita: ['Próxima visita'],
+    notasGenerales: ['Notas generales'], codigo: ['Código', 'Codigo'] },
   visitas: { titulo: ['$title'], estado: ['Estado'], fecha: ['Fecha'], localNombre: ['Local'], marca: ['Marca'], observaciones: ['Observaciones'],
     personas: ['Personas presentes'], resultado: ['Resultado general'], motivo: ['Motivo', 'Tipo'] },
   incidencias: { titulo: ['$title'], categoria: ['Categoría'], accion: ['Acción correctiva'], estado: ['Estado'], prioridad: ['Prioridad', 'Gravedad'],
@@ -39,6 +42,7 @@ export const MAP = {
 
 // Propiedades que la app puede proponer cambiar (siempre vía Aprobaciones). Solo estas; el resto es de solo lectura.
 export const WRITABLE = {
+  locales: ['estado', 'proximaVisita', 'notasGenerales'],
   tareas: ['estado', 'limite', 'descripcion', 'evidencia'],
   incidencias: ['estado', 'accion'],
   visitas: ['estado', 'observaciones', 'resultado'],
@@ -106,8 +110,15 @@ export function normalize(col, page) {
   const txt = (v) => (Array.isArray(v) ? v.join(', ') : v);
   const base = { id: page.id, url: page.url, origen: `Notion · ${NOTION_COLLECTIONS[col].name}`, props: raw, archived: !!(page.archived || page.in_trash) };
   switch (col) {
-    case 'locales': return { ...base, nombre: m.nombre || '(sin nombre)', direccion: m.direccion, estado: m.estado, formato: m.formato, marca: txt(m.marca),
-      ciudad: txt(m.ciudad), responsable: txt(m.responsable), codigo: m.codigo, ultimaVisita: toIso(dateStart(m.ultimaVisita)) };
+    case 'locales': {
+      const municipio = txt(m.municipio) || null;
+      const responsableAsignado = txt(m.responsableAsignado) || null;
+      // `ciudad` y `responsable` se mantienen por compatibilidad con el resto de módulos de la app.
+      return { ...base, nombre: m.nombre || '(sin nombre)', direccion: m.direccion, estado: m.estado, formato: m.formato, marca: txt(m.marca),
+        municipio, ciudad: municipio, zona: txt(m.zona) || null, responsableAsignado, responsable: responsableAsignado, gerente: txt(m.gerente) || null,
+        franquiciado: txt(m.franquiciado) || null, prioridad: m.prioridad, proximaVisita: toIso(dateStart(m.proximaVisita)), notasGenerales: m.notasGenerales,
+        codigo: m.codigo, ultimaVisita: toIso(dateStart(m.ultimaVisita)), notionEditedAt: page.last_edited_time || null };
+    }
     case 'visitas': return { ...base, titulo: m.titulo, estado: m.estado, fecha: toIso(dateStart(m.fecha)), localNombre: rel(m.localNombre) ? null : txt(m.localNombre),
       localId: rel(m.localNombre), marca: txt(m.marca), observaciones: m.observaciones, personas: txt(m.personas), resultado: m.resultado,
       motivo: txt(m.motivo) || m.titulo, responsable: 'Alberto', fotos: [], incidencias: [], acciones: [] };
@@ -133,6 +144,28 @@ export function normalize(col, page) {
         localId: rel(m.localNombre), ubicacion: txt(m.ubicacion), outlookId: m.outlookId, notas: m.notas, responsable: 'Alberto' };
     }
     default: return { ...base };
+  }
+}
+
+/**
+ * Comprobación en vivo (con sesión): consulta Locales directamente en Notion y lo compara con la copia del backend.
+ * Sirve para saber que la cadena Notion → Worker → app funciona de verdad, no solo que el Worker responde.
+ */
+export async function liveCheck(env, budget) {
+  const out = { at: now(), configured: notionConfigured(env), collections: Object.keys(dataSources(env)) };
+  if (!out.configured) return { ...out, ok: false, error: 'Falta NOTION_TOKEN o NOTION_DATA_SOURCES en el backend' };
+  const t0 = Date.now();
+  try {
+    const res = await query(env, budget, 'locales', { maxPages: 3 });
+    const live = res.pages.filter((p) => !p.archived && !p.in_trash);
+    const sample = live[0] ? normalize('locales', live[0]) : null;
+    const row = await env.DB.prepare("SELECT COUNT(*) n, MAX(synced_at) last FROM records WHERE system = 'notion' AND collection = 'locales' AND deleted = 0").first();
+    return { ...out, ok: true, ms: Date.now() - t0,
+      notion: { locales: live.length, complete: res.done, conResponsableAsignado: live.filter((p) => propValue(p.properties?.['Responsable asignado'])).length },
+      backend: { locales: row?.n ?? 0, lastSync: row?.last ?? null }, inSync: res.done ? live.length === (row?.n ?? 0) : null,
+      sample: sample && { nombre: sample.nombre, marca: sample.marca, municipio: sample.municipio, zona: sample.zona, responsableAsignado: sample.responsableAsignado, gerente: sample.gerente } };
+  } catch (e) {
+    return { ...out, ok: false, ms: Date.now() - t0, error: e instanceof HttpError ? e.message : 'Error inesperado al consultar Notion' };
   }
 }
 
@@ -179,7 +212,14 @@ export async function query(env, budget, col, { since, startCursor, maxPages = 5
 }
 
 /** Escritura en Notion: solo la llama approvals.js tras aprobación explícita. Valida contra el esquema real. */
-export async function updatePage(env, budget, col, pageId, changes) {
+export async function updatePage(env, budget, col, pageId, changes, { expectedEditedAt } = {}) {
+  // Control de conflictos: si la página cambió en Notion después de que la app la leyera, no se pisa.
+  if (expectedEditedAt) {
+    const cur = await api(env, budget, 'GET', `/pages/${pageId}`);
+    if (cur.last_edited_time && Date.parse(cur.last_edited_time) > Date.parse(expectedEditedAt)) {
+      throw new HttpError(409, `La página cambió en Notion (${cur.last_edited_time}) después de tu propuesta. Sincroniza y vuelve a proponer el cambio.`, 'conflict');
+    }
+  }
   const sch = await schema(env, budget, col);
   const properties = {};
   for (const [field, value] of Object.entries(changes)) {

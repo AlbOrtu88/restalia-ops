@@ -58,6 +58,24 @@ const mlog = await (await fetch(M + '/__log')).json();
 ok(mlog.some((l) => l.startsWith('PATCH /notion/pages/aaaaaaaa')) && mlog.some((l) => l.startsWith('POST /notion/pages')), 'Notion recibió PATCH y alta en Historial');
 ok(!mlog.some((l) => /^(POST|PATCH|PUT|DELETE) \/graph\//.test(l) && !l.includes('/search/query')), 'Graph: ninguna escritura');
 
+// 5b. Locales: mapeo real, comprobación en vivo y escritura con control de conflictos
+d = await (await req('/api/data?since=1970-01-01', { cookie })).json();
+const loc = d.records.find((x) => x.collection === 'locales' && !x.deleted)?.data || {};
+ok(loc.responsableAsignado === 'Responsable Ficticio' && loc.responsable === 'Responsable Ficticio' && loc.gerente === 'Gerente Ficticio', 'Locales: «Responsable asignado» separado de «Gerente»');
+ok(loc.municipio === 'Majadahonda' && loc.ciudad === 'Majadahonda' && loc.zona === 'Comunidad de Madrid' && loc.marca === 'Marca Ficticia' && loc.notasGenerales === 'Nota ficticia' && loc.notionEditedAt, 'Locales: Municipio, Zona, Marca, Notas generales y versión de Notion');
+j = await (await req('/api/notion/check', { cookie })).json();
+ok(j.ok && j.notion.locales === 1 && j.backend.locales === 1 && j.inSync === true && j.notion.conResponsableAsignado === 1 && j.sample?.zona === 'Comunidad de Madrid', 'comprobación en vivo Notion ↔ backend');
+r = await req('/api/notion/check'); ok(r.status === 401, 'comprobación en vivo sin sesión → 401');
+const LREF = 'bbbbbbbb-0000-0000-0000-000000000001';
+r = await req('/api/approvals/execute', { method: 'POST', cookie, body: { id: 'apr-l', accion: 'Cambiar estado', op: { type: 'notion.update', collection: 'locales', ref: LREF, changes: { estado: 'En seguimiento' } } } });
+ok(r.status === 422, 'Locales sin versión (baseEditedAt) → 422');
+r = await req('/api/approvals/execute', { method: 'POST', cookie, body: { id: 'apr-l', accion: 'Cambiar estado', op: { type: 'notion.update', collection: 'locales', ref: LREF, changes: { estado: 'En seguimiento' }, baseEditedAt: '2000-01-01T00:00:00Z' } } });
+j = await r.json(); ok(r.status === 409 && j.code === 'conflict', 'Locales cambiado en Notion después de la propuesta → 409 sin escribir');
+r = await req('/api/approvals/execute', { method: 'POST', cookie, body: { id: 'apr-l', accion: 'Renombrar', op: { type: 'notion.update', collection: 'locales', ref: LREF, changes: { nombre: 'x' }, baseEditedAt: loc.notionEditedAt } } });
+ok(r.status === 422, 'Locales: campo no permitido (nombre) → 422');
+r = await req('/api/approvals/execute', { method: 'POST', cookie, body: { id: 'apr-l', accion: 'Cambiar estado', op: { type: 'notion.update', collection: 'locales', ref: LREF, changes: { estado: 'En seguimiento', proximaVisita: '2026-12-01', notasGenerales: 'Revisar terraza' }, baseEditedAt: loc.notionEditedAt } } });
+j = await r.json(); ok(r.status === 200 && j.collection === 'Locales', `Locales: Estado, Próxima visita y Notas generales escritos tras aprobación (${r.status})`);
+
 // 6. Búsquedas en vivo y esquema
 j = await (await req('/api/graph/files?q=apertura', { cookie })).json(); ok(j.live && j.items[0]?.origen === 'SharePoint', 'búsqueda de documentos en SharePoint/OneDrive');
 j = await (await req('/api/notion/schema', { cookie })).json();

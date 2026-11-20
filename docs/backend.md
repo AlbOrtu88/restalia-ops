@@ -1,6 +1,6 @@
 # Backend de Restalia Operations AI · administración
 
-Versión 0.2 · noviembre de 2026. Código en [`worker/`](../worker). Arquitectura general en [arquitectura.md](arquitectura.md).
+Versión 0.3 · noviembre de 2026. Código en [`worker/`](../worker). Arquitectura general en [arquitectura.md](arquitectura.md).
 
 ## 1. Qué hay desplegado
 
@@ -22,7 +22,7 @@ Versión 0.2 · noviembre de 2026. Código en [`worker/`](../worker). Arquitectu
 - Peticiones que cambian algo: se rechazan si el `Origin` no es el del propio Worker (CSRF).
 - Microsoft Graph es de **solo lectura** en el código: el cliente rechaza cualquier método que no sea GET (salvo `POST /search/query`, que es una búsqueda). No hay envío de correo ni escritura en Teams, SharePoint u OneDrive.
 - Escritura en Notion: solo desde `/api/approvals/execute`, con propuesta aprobada en la app, operación estructurada, campo permitido y opción válida según el esquema real, y con el interruptor `NOTION_WRITES_ENABLED="true"` (apagado por defecto). Cada ejecución se registra en auditoría y en «Historial de cambios».
-- Acceso con llave (opcional): `ACCESS_KEY` de 24+ caracteres, bloqueo de 15 min tras 5 intentos fallidos. Pensado para usar Notion antes de tener Entra ID. Se puede quitar borrando el secreto.
+- Acceso con llave (opcional): `ACCESS_KEY` de **24 caracteres o más** (si es más corta, el acceso con llave queda desactivado y Configuración lo indica), bloqueo de 15 min tras 5 intentos fallidos. Pensado para usar Notion antes de tener Entra ID. Se puede quitar borrando el secreto.
 - Retención: correos y mensajes de Teams de más de 45 días se eliminan; registro de sincronización 30 días; auditoría 180 días. Del correo solo se guarda asunto, remitente, fecha, vista previa (≈255 caracteres) y enlace.
 
 ## 3. Secretos y variables (Cloudflare → Workers → el Worker → Settings → Variables and Secrets)
@@ -101,6 +101,15 @@ Desde el contenedor de Claude no se llega a `api.cloudflare.com`, así que el de
 
 Con un ordenador con `wrangler` también vale: `cd worker && npx wrangler deploy --env dev` (o `--env prod`).
 
+## 7 bis. Comprobar que Notion llega de verdad a la app
+
+`/api/health` solo dice que el Worker responde. Para comprobar la cadena completa, con sesión iniciada: Configuración → **Comprobar conexión con Notion** (`GET /api/notion/check`). Consulta «Locales» en vivo en Notion y lo compara con la copia del backend: número de locales, cuántos tienen «Responsable asignado», última sincronización y si coinciden.
+
+### Locales: campos y escritura
+
+- Mapeo: `responsableAsignado` ← «Responsable asignado», `gerente` ← «Gerente» (nunca se mezclan), `municipio` ← «Municipio», `zona`, `prioridad`, `proximaVisita`, `franquiciado`, `notasGenerales`, `notionEditedAt` (versión de la página). `ciudad` y `responsable` se mantienen como alias por compatibilidad.
+- Desde la app solo se pueden **proponer** cambios de Estado, Próxima visita y Notas generales. Se ejecutan solo al aprobarlos en Aprobaciones y con `NOTION_WRITES_ENABLED="true"`. Antes de escribir, el backend comprueba que la página no haya cambiado en Notion desde la propuesta (si cambió → 409 y no se escribe).
+
 ## 8. Pruebas
 
 ```bash
@@ -112,7 +121,7 @@ node test/mock-apis.mjs &                       # Notion, Entra ID y Graph simul
 # NOTION_API_BASE=http://localhost:8790/notion, GRAPH_BASE=http://localhost:8790/graph,
 # MS_LOGIN_BASE=http://localhost:8790/login, NOTION_WRITES_ENABLED=true, FRONTEND_ORIGIN=http://localhost:8000
 npx wrangler dev --env dev --local &
-node test/e2e.mjs                               # 30 comprobaciones (con la base local recién creada)
+node test/e2e.mjs                               # 39 comprobaciones (con la base local recién creada)
 ```
 
 Cubren: login con PKCE y rechazo de otra cuenta, cookie segura, CSRF, bloqueo por intentos, paginación de Notion, deltas de Graph con borrados, idempotencia (una segunda sincronización no reenvía nada), ausencia de duplicados, reconciliación de borrados, escritura en Notion validada contra el esquema, Historial de cambios, cero escrituras en Graph y búsqueda en SharePoint.

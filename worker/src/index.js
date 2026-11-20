@@ -4,14 +4,14 @@
 //             (Safari en iPhone bloquea cookies de terceros entre github.io y workers.dev).
 import { json, errorResponse, HttpError, Budget, now, audit } from './util.js';
 import * as auth from './auth.js';
-import { notionConfigured, schema, NOTION_COLLECTIONS, dataSources } from './notion.js';
+import { notionConfigured, schema, NOTION_COLLECTIONS, dataSources, liveCheck } from './notion.js';
 import { searchMail, searchFiles } from './graph.js';
 import { runSync, syncStatus, changes, cron, ALL_SOURCES } from './sync.js';
 import { chat, aiProvider } from './ai.js';
 import { execute } from './approvals.js';
 import { vaultGet } from './util.js';
 
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
 
 async function loadCollection(env, collection, { limit = 200 } = {}) {
   const { results } = await env.DB.prepare('SELECT system, ref, data, updated_at, synced_at FROM records WHERE collection = ? AND deleted = 0 ORDER BY updated_at DESC LIMIT ?').bind(collection, limit).all();
@@ -60,6 +60,7 @@ async function api(req, env, url) {
   }
 
   // Notion (lectura)
+  if (p === '/notion/check' && m === 'GET') return json(await liveCheck(env, new Budget(6)));
   if (p === '/notion/schema' && m === 'GET') {
     const budget = new Budget(30);
     const cols = Object.keys(dataSources(env));

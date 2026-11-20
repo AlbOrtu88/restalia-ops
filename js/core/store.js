@@ -106,7 +106,7 @@ export function add(col, rec, { prefix } = {}) {
   return r;
 }
 // Campos de registros de Notion cuyo cambio en la app se propone a Notion (vía Aprobaciones). Coincide con WRITABLE del backend.
-const NOTION_WRITABLE = { tareas: ['estado', 'limite', 'descripcion', 'evidencia'], incidencias: ['estado', 'accion'], visitas: ['estado', 'observaciones', 'resultado'] };
+const NOTION_WRITABLE = { locales: ['estado', 'proximaVisita', 'notasGenerales'], tareas: ['estado', 'limite', 'descripcion', 'evidencia'], incidencias: ['estado', 'accion'], visitas: ['estado', 'observaciones', 'resultado'] };
 
 export function update(col, id, patch) {
   const i = data[col].findIndex((r) => r.id === id);
@@ -123,14 +123,14 @@ export function update(col, id, patch) {
 }
 
 function proposeNotionChange(col, rec, changes) {
-  const base = { tareas: 'Acciones y seguimientos', incidencias: 'Incidencias', visitas: 'Visitas' }[col];
+  const base = { locales: 'Locales', tareas: 'Acciones y seguimientos', incidencias: 'Incidencias', visitas: 'Visitas' }[col];
   const title = rec.titulo || rec.nombre || rec.id;
   // Si ya hay una propuesta pendiente para el mismo registro, se actualiza en lugar de duplicarla.
   const prev = data.aprobaciones.find((a) => a.estado === 'Pendiente' && a.op?.ref === rec.source.ref);
   const merged = { ...(prev?.op?.changes || {}), ...changes };
   const datos = { Base: base, Registro: title, ...Object.fromEntries(Object.entries(merged).map(([k, v]) => [k[0].toUpperCase() + k.slice(1), `${rec[k] ?? '—'} → ${v}`])) };
   const fields = { accion: `Actualizar «${title}» en Notion`, sistema: 'Notion', motivo: 'Cambio hecho en la app sobre un registro sincronizado de Notion', datos,
-    resultado: `Se modificará la página en «${base}» y se anotará en Historial de cambios.`, op: { type: 'notion.update', collection: col, ref: rec.source.ref, changes: merged }, refUrl: rec.url || null };
+    resultado: `Se modificará la página en «${base}» y se anotará en Historial de cambios.`, op: { type: 'notion.update', collection: col, ref: rec.source.ref, changes: merged, baseEditedAt: prev?.op?.baseEditedAt || rec.notionEditedAt || rec.source.updatedAt || null }, refUrl: rec.url || null };
   if (prev) Object.assign(prev, fields);
   else data.aprobaciones.unshift({ id: uid('apr'), ...fields, estado: 'Pendiente', creada: new Date().toISOString(), origen: 'Cambio en la app', historial: [], demo: false, source: { system: 'local', ref: null } });
 }
@@ -205,6 +205,8 @@ export function applyRemote(records) {
     const i = index[col].get(key);
     if (r.deleted) { if (i != null) { data[col][i] = null; touched[col] = (touched[col] || 0) + 1; } continue; }
     const rec = { ...r.data, id: r.data.id || r.ref, demo: false, source: { system: r.system, ref: r.ref, updatedAt: r.updatedAt, syncedAt: r.syncedAt } };
+    // Las notas de Alberto sobre un local son solo de este dispositivo: la sincronización no las borra.
+    if (i != null && col === 'locales' && Array.isArray(data[col][i]?.notas)) rec.notas = data[col][i].notas;
     if (i != null) data[col][i] = rec; else { data[col].push(rec); index[col].set(key, data[col].length - 1); }
     touched[col] = (touched[col] || 0) + 1;
   }
