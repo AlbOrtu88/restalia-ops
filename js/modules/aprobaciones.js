@@ -4,6 +4,7 @@ import * as store from '../core/store.js';
 import { icon, badge, demoBadge, empty, pageHead, seg, bindSeg, demoNotice, openSheet, confirmSheet, toast, on } from '../core/ui.js';
 import { esc, fmtDateTime, relTime, toDate } from '../core/utils.js';
 import { request, backendConfigured, NotConnectedError } from '../adapters/backend.js';
+import { notionFields } from './visitas.js';
 
 const SYS = { Notion: { ic: 'db', c: '' }, Outlook: { ic: 'mail', c: 'blue' }, Teams: { ic: 'teams', c: 'purple' } };
 const COLOR = { 'Pendiente (Notion)': 'amber', 'Aprobado': 'green', 'Rechazado': 'red', 'Pendiente': 'amber', 'En cola (sin conexión)': 'blue', 'Ejecutada': 'green', 'Rechazada': 'red', 'Error': 'red' };
@@ -11,6 +12,17 @@ const st = { tab: 'pendientes' };
 const COL_HREF = { visitas: 'visitas', incidencias: 'incidencias', mensajes: 'comunicaciones', tareas: 'tareas', auditorias: 'auditorias' };
 
 const histEntry = (accion, nota = '') => ({ fecha: new Date().toISOString(), accion, por: store.getSettings().userName || 'Alberto', nota });
+
+// Propuestas «Crear visita/incidencia en Notion» hechas con versiones anteriores de la app (sin operación estructurada):
+// se rehace la operación a partir del registro guardado en este dispositivo, con el local como relación.
+function repairLegacyCreate(a) {
+  if (a.op || a.sistema !== 'Notion' || !['visitas', 'incidencias'].includes(a.ref?.col)) return a;
+  const rec = store.find(a.ref.col, a.ref.id);
+  if (!rec || rec.demo || rec.source?.system === 'notion') return a;
+  const op = { type: 'notion.create', collection: a.ref.col, fields: notionFields(a.ref.col === 'visitas' ? 'visita' : 'incidencia', rec) };
+  store.update('aprobaciones', a.id, { op });
+  return { ...a, op };
+}
 
 async function approve(a) {
   const ok = await confirmSheet({
@@ -22,6 +34,7 @@ async function approve(a) {
   });
   if (!ok) return;
   const hist = [...(a.historial || []), histEntry('Aprobada')];
+  a = repairLegacyCreate(a);
   try {
     const r = await request('/approvals/execute', { method: 'POST', body: { id: a.id, sistema: a.sistema, accion: a.accion, datos: a.datos, ref: a.ref || null, op: a.op || null }, system: a.sistema });
     const omitidos = r?.skipped?.length ? `Sin rellenar en Notion: ${r.skipped.join(', ')}` : '';
