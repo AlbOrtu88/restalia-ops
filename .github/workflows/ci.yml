@@ -57,7 +57,8 @@ jobs:
         working-directory: worker
         run: |
           npm ci
-          npm install --no-save playwright@1.49.1
+          # Chromium reciente: acepta la cookie de sesión «__Host-» en http://localhost (la 1.49 la descartaba).
+          npm install --no-save playwright@1.63.0
           npx playwright install --with-deps chromium
       - name: Arrancar app, APIs simuladas y Worker local
         run: |
