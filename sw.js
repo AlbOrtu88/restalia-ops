@@ -1,6 +1,6 @@
 // Service worker: guarda la app en el dispositivo para abrirla sin conexión.
 // Solo cachea los archivos propios de la app. Nunca cachea llamadas al backend.
-const VERSION = 'restalia-v0.6.2';
+const VERSION = 'restalia-v0.6.3';
 const SHELL = [
   './',
   "./css/app.css",
@@ -46,7 +46,8 @@ const SHELL = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // cache: 'reload' evita copiar archivos viejos de la caché HTTP (GitHub Pages los guarda 10 min) en la versión nueva.
+  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
@@ -64,7 +65,7 @@ self.addEventListener('fetch', (e) => {
   }
   // Archivos de la app: caché primero, actualizando en segundo plano.
   e.respondWith(caches.match(e.request).then((hit) => {
-    const net = fetch(e.request).then((r) => { if (r.ok) { const copy = r.clone(); caches.open(VERSION).then((c) => c.put(e.request, copy)); } return r; }).catch(() => hit);
+    const net = fetch(e.request, { cache: 'no-cache' }).then((r) => { if (r.ok) { const copy = r.clone(); caches.open(VERSION).then((c) => c.put(e.request, copy)); } return r; }).catch(() => hit);
     return hit || net;
   }));
 });
