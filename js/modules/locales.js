@@ -23,9 +23,28 @@ export function googleMapsUrl(l) {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
 }
 
+/** Destino para navegar: la dirección si existe (más fiable) o las coordenadas. */
+function destino(l) {
+  const m = muni(l);
+  if (l.direccion) return m && !norm(l.direccion).includes(norm(m)) ? `${l.direccion}, ${m}` : l.direccion;
+  if (l.lat != null && l.lng != null) return `${l.lat},${l.lng}`;
+  return [l.nombre, m].filter(Boolean).join(', ');
+}
+/** «Cómo llegar» en Google Maps: abre la ruta en coche desde la ubicación actual (app si está instalada). */
+export const googleDirectionsUrl = (l) => `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destino(l))}&travelmode=driving`;
+/** «Ir con Waze»: usa las coordenadas exactas si las hay y, si no, la dirección. Abre la app de Waze si está instalada. */
+export function wazeUrl(l) {
+  const exact = l.lat != null && l.lng != null && l.geoPrecision !== 'municipio';
+  return exact ? `https://waze.com/ul?ll=${l.lat},${l.lng}&navigate=yes` : `https://waze.com/ul?q=${encodeURIComponent(destino(l))}&navigate=yes`;
+}
+/** Botones «Cómo llegar» (Google Maps y Waze). */
+export const navButtons = (l, cls = 'btn sm') => `<div class="btn-row nav-btns">
+  <a class="${cls} primary" href="${googleDirectionsUrl(l)}" target="_blank" rel="noopener">${icon('pin', 'sm')} Ir con Google Maps</a>
+  <a class="${cls}" href="${wazeUrl(l)}" target="_blank" rel="noopener">${icon('pin', 'sm')} Ir con Waze</a></div>`;
+
 // ---------- Mapa (Leaflet + OpenStreetMap, gratis y sin clave) ----------
 const LEAFLET = { css: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css', js: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js' };
-const BRAND_COLORS = { '100 Montaditos': '#e07a10', 'The Good Burger': '#d6332a', 'Cervecería La Sureña': '#1d5bff', 'Panther Organic Coffee': '#1f9d55', 'Pepe Taco': '#8b3fd9' };
+const BRAND_COLORS = { '100 Montaditos': '#e07a10', 'The Good Burger': '#d6332a', 'Cervecería La Sureña': '#1d5bff', 'Mercado La Sureña': '#0e9aa7', 'Panther Organic Coffee': '#1f9d55', 'Pepe Taco': '#8b3fd9' };
 const brandColor = (m) => BRAND_COLORS[m] || '#6b7280';
 let leafletP = null, mapInst = null;
 function loadLeaflet() {
@@ -63,7 +82,7 @@ async function renderMap(el, items) {
     L.circleMarker(ll, { radius: 9, color: '#ffffff', weight: 2, fillColor: brandColor(l.marca), fillOpacity: aprox ? 0.55 : 0.95, dashArray: aprox ? '3' : null })
       .bindPopup(`<div class="map-pop"><b>${esc(l.nombre)}</b><div class="small subtle">${[l.marca, muni(l)].filter(Boolean).map(esc).join(' · ')}</div>
         ${aprox ? '<div class="xs subtle">Ubicación aproximada (municipio)</div>' : ''}
-        <div style="margin-top:6px"><a href="#/locales/${esc(l.id)}">Ver ficha</a> · <a href="${googleMapsUrl(l)}" target="_blank" rel="noopener">Google Maps</a></div></div>`)
+        <div style="margin-top:6px"><a href="#/locales/${esc(l.id)}">Ver ficha</a> · <a href="${googleDirectionsUrl(l)}" target="_blank" rel="noopener">Ir con Google Maps</a> · <a href="${wazeUrl(l)}" target="_blank" rel="noopener">Ir con Waze</a></div></div>`)
       .addTo(mapInst);
   });
   if (pts.length) mapInst.fitBounds(pts, { padding: [28, 28], maxZoom: 15 });
@@ -129,7 +148,8 @@ function list(view) {
         <div class="row between"><span class="li-icon blue">${icon('store')}</span>${estadoBadge(l)}</div>
         <h3 style="margin:12px 0 2px">${esc(l.nombre)}</h3><div class="small subtle">${[l.marca, l.codigo, muni(l), l.zona].filter(Boolean).map(esc).join(' · ')}</div>
         <div class="row wrap" style="margin-top:12px;gap:6px">${demoBadge(l)}${n ? badge(`${n} incidencias`, 'red') : badge('Sin incidencias', 'green')}${a ? badge(`Auditoría ${a.puntuacion}`, a.puntuacion >= 85 ? 'green' : a.puntuacion >= 70 ? 'amber' : 'red') : ''}</div>
-        <div class="small muted" style="margin-top:10px">${icon('user', 'sm')} ${esc(resp(l) || 'Sin responsable asignado')}</div></div>`; }).join('')}</div>`;
+        <div class="small muted" style="margin-top:10px">${icon('user', 'sm')} ${esc(resp(l) || 'Sin responsable asignado')}</div>
+        <div style="margin-top:12px">${navButtons(l)}</div></div>`; }).join('')}</div>`;
   };
 
   const sel = (id, label, all, cur, opts = []) => `<select class="sel" id="${id}" aria-label="${label}"><option value="">${label}</option>${opts.join('')}${all.map((m) => `<option ${m === cur ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select>`;
@@ -222,6 +242,7 @@ function detail(view, id) {
         ${prop('Código', esc(l.codigo || ''), 'mono')}
         <dt>Dirección</dt><dd>${esc(l.direccion || '—')}${m && !norm(l.direccion).includes(nm) ? `<br><span class="subtle">${esc(m)}</span>` : ''}</dd>
         ${prop('Zona', esc(l.zona || ''))}
+        <dt>Cómo llegar</dt><dd>${navButtons(l)}</dd>
         <dt>Ubicación</dt><dd><a href="${googleMapsUrl(l)}" target="_blank" rel="noopener">${icon('pin', 'sm')} Abrir en Google Maps</a>${l.lat != null && l.lng != null ? `<br><a href="https://maps.apple.com/?q=${encodeURIComponent(`${l.lat},${l.lng}`)}" target="_blank" rel="noopener" class="small">Abrir en Apple Mapas</a>` : ''}</dd>
         <dt>Responsable asignado</dt><dd>${esc(resp(l) || '—')}</dd>
         ${prop('Gerente', esc(l.gerente || ''))}
