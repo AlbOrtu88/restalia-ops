@@ -37,10 +37,31 @@ function derive() {
       if (l) { m.localId = l.id; m.localPorTexto = true; }
     });
   }
+  // Agenda de Outlook (Graph o calendario publicado): enlace con el local si el evento lo dice.
+  // Evidencia, de más a menos fuerte: la marca «restalia-local:<id>» que pone «Programar visita», la dirección del local
+  // en la ubicación del evento, o el nombre completo del local en el título.
+  if (locales.length) {
+    const byId = new Set(locales.map((l) => l.id));
+    const street = (l) => norm(String(l.direccion || '').split(',')[0]);
+    store._mutate('eventos', (e) => {
+      if (!['graph', 'ics'].includes(e.source?.system)) return;
+      const mark = String(e.descripcion || '').match(/restalia-local:([\w-]+)/);
+      let id = mark && byId.has(mark[1]) ? mark[1] : null, how = id ? 'marca' : null;
+      if (!id && e.ubicacion) {
+        // Varios locales comparten dirección (mismo centro comercial): se desempata por la marca o el prefijo del nombre en el título.
+        const u = norm(e.ubicacion), t = norm(e.titulo);
+        const cands = locales.filter((x) => street(x).length > 6 && u.includes(street(x)));
+        const l = cands.length === 1 ? cands[0] : cands.find((x) => (x.marca && t.includes(norm(x.marca))) || t.includes(norm(x.nombre).split(' ')[0]));
+        if (l) { id = l.id; how = 'direccion'; }
+      }
+      if (!id && e.titulo) { const t = norm(e.titulo); const l = locales.find((x) => norm(x.nombre).length > 6 && t.includes(norm(x.nombre))); if (l) { id = l.id; how = 'titulo'; } }
+      e.localId = id; e.localPor = how;
+    });
+  }
   // Agenda: un evento de Outlook que ya está en Agenda Restalia (mismo id de Outlook, o mismo título y hora ±10 min) se oculta.
   const notionEv = store._raw('eventos').filter((e) => e.source?.system === 'notion');
   store._mutate('eventos', (e) => {
-    if (e.source?.system !== 'graph') return;
+    if (!['graph', 'ics'].includes(e.source?.system)) return;
     const dup = notionEv.find((n) => (n.outlookId && e.source.ref.endsWith(n.outlookId)) ||
       (norm(n.titulo) === norm(e.titulo) && n.inicio && e.inicio && Math.abs(Date.parse(n.inicio) - Date.parse(e.inicio)) <= 6e5));
     e.hidden = !!dup;

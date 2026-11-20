@@ -57,12 +57,26 @@ const routes = [
   ['POST', /^\/graph\/search\/query$/, () => [200, { value: [{ hitsContainers: [{ hits: [{ summary: 'procedimiento de <c0>apertura</c0>', resource: { id: 'f1', name: 'Procedimiento de apertura FICTICIO.pdf', webUrl: 'https://x.sharepoint.com/sites/ops/f1', lastModifiedDateTime: iso(-3), parentReference: { path: '/drive/root:/Operaciones' } } }] }] }] }]],
 ];
 
+// Calendario publicado de Outlook (ICS) simulado: una visita mañana, una serie semanal con una excepción y un evento cancelado.
+const icsDay = (offset) => { const d = new Date(Date.now() + offset * 864e5); return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`; };
+let icsCancel = false;
+const icsText = () => ['BEGIN:VCALENDAR', 'VERSION:2.0', 'METHOD:PUBLISH', 'BEGIN:VTIMEZONE', 'TZID:Romance Standard Time', 'END:VTIMEZONE',
+  'BEGIN:VEVENT', 'UID:visita-1', 'SUMMARY:Visita operativa · Local Prueba 1', 'DESCRIPTION:Programada desde Restalia Ops\\nrestalia-local:bbbbbbbb-0000-0000-0000-000000000001',
+  'LOCATION:Calle Ficticia 1\\, Majadahonda', `DTSTART;TZID=Romance Standard Time:${icsDay(1)}T100000`, `DTEND;TZID=Romance Standard Time:${icsDay(1)}T113000`, 'END:VEVENT',
+  'BEGIN:VEVENT', 'UID:serie-1', 'SUMMARY:Comité FICTICIO', 'ORGANIZER;CN="Persona Ficticia":mailto:x@example.com', 'ATTENDEE;CN=Y:mailto:y@example.com',
+  `DTSTART;TZID=Romance Standard Time:${icsDay(-3)}T090000`, `DTEND;TZID=Romance Standard Time:${icsDay(-3)}T100000`, 'RRULE:FREQ=WEEKLY;COUNT=4',
+  'X-MICROSOFT-SKYPETEAMSMEETINGURL:https://teams.microsoft.com/l/meetup-join/ficticio', 'END:VEVENT',
+  ...(icsCancel ? [] : ['BEGIN:VEVENT', 'UID:puntual-1', 'SUMMARY:Reunión puntual FICTICIA', `DTSTART;TZID=Romance Standard Time:${icsDay(2)}T160000`, `DTEND;TZID=Romance Standard Time:${icsDay(2)}T170000`, 'END:VEVENT']),
+  'END:VCALENDAR'].join('\r\n');
+
 http.createServer((req, res) => {
   let body = '';
   req.on('data', (c) => (body += c));
   req.on('end', () => {
     log.push(`${req.method} ${req.url}`);
     if (req.url === '/__log') { res.end(JSON.stringify(log)); return; }
+    if (req.url === '/ics/calendar.ics') { res.writeHead(200, { 'Content-Type': 'text/calendar' }); res.end(icsText()); return; }
+    if (req.url === '/__ics-cancel') { icsCancel = true; res.end('ok'); return; }
     const path = req.url.split('?')[0];
     if (/^\/graph\//.test(path) && req.method !== 'GET' && path !== '/graph/search/query') { res.writeHead(500); res.end('ESCRITURA EN GRAPH DETECTADA'); return; }
     for (const [m, re, fn] of routes) {

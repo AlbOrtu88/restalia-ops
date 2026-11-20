@@ -12,7 +12,7 @@ import { execute } from './approvals.js';
 import { geoStatus, geocodeLocales } from './geo.js';
 import { vaultGet } from './util.js';
 
-const VERSION = '0.4.0';
+const VERSION = '0.5.0';
 
 async function loadCollection(env, collection, { limit = 200 } = {}) {
   const { results } = await env.DB.prepare('SELECT system, ref, data, updated_at, synced_at FROM records WHERE collection = ? AND deleted = 0 ORDER BY updated_at DESC LIMIT ?').bind(collection, limit).all();
@@ -37,7 +37,8 @@ async function api(req, env, url) {
     return json({
       ok: true, version: VERSION, env: env.ENVIRONMENT, time: now(),
       notion: notionConfigured(env) && okFor('notion:'), graph: !!ms && okFor('graph:'), ai: !!aiProvider(env), storage: true, push: false,
-      configured: { notion: notionConfigured(env), entra: auth.entraConfigured(env), teams: !!env.TEAMS_TEAM_ID, notionWrites: env.NOTION_WRITES_ENABLED === 'true' },
+      calendar: !!env.OUTLOOK_ICS_URL && okFor('ics:'),
+      configured: { notion: notionConfigured(env), entra: auth.entraConfigured(env), teams: !!env.TEAMS_TEAM_ID, outlookIcs: !!env.OUTLOOK_ICS_URL, notionWrites: env.NOTION_WRITES_ENABLED === 'true' },
     });
   }
   if (p === '/auth/login' && m === 'GET') return auth.login(env, req, url);

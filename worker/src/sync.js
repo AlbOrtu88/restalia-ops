@@ -7,11 +7,14 @@ import { NOTION_COLLECTIONS, dataSources, notionConfigured, query, normalize, sc
 import { gfetch, mailToRecord, eventToRecord, driveItemToRecord, teamsMessageToRecord } from './graph.js';
 import { vaultGet } from './util.js';
 import { cachedCoords, geocodeLocales } from './geo.js';
+import { icsToRecords } from './ics.js';
+import { fetchRetry } from './util.js';
 
 const DAY = 864e5;
 export const NOTION_SOURCES = Object.keys(NOTION_COLLECTIONS).map((c) => `notion:${c}`);
 export const GRAPH_SOURCES = ['graph:calendar', 'graph:mail', 'graph:teams', 'graph:files'];
-export const ALL_SOURCES = [...NOTION_SOURCES, ...GRAPH_SOURCES];
+export const ICS_SOURCES = ['ics:calendar'];
+export const ALL_SOURCES = [...NOTION_SOURCES, ...GRAPH_SOURCES, ...ICS_SOURCES];
 
 async function getState(env, source) {
   return (await env.DB.prepare('SELECT * FROM sync_state WHERE source = ?').bind(source).first()) || { source, cursor: null };
@@ -157,7 +160,20 @@ async function syncTeams(env, budget) {
   return out;
 }
 
+/** Calendario publicado de Outlook (ICS): sin Entra ID, solo lectura. Se descarga entero y se reconcilian los borrados. */
+async function syncIcs(env, budget) {
+  const r = await fetchRetry(env.OUTLOOK_ICS_URL, { headers: { Accept: 'text/calendar', 'User-Agent': 'restalia-ops' } }, budget, { tries: 2 });
+  if (!r.ok) throw new HttpError(502, `El calendario publicado respondió ${r.status}. Revisa que el enlace ICS siga activo en Outlook.`);
+  const rows = (await icsToRecords(await r.text(), { tz: env.TIMEZONE || 'Europe/Madrid' }))
+    .map((x) => ({ system: 'ics', ref: x.ref, collection: 'eventos', data: x.data, updatedAt: now() }));
+  const n = await upsert(env, rows);
+  const gone = await tombstoneMissing(env, 'ics', 'eventos', rows.map((x) => x.ref));
+  await setState(env, 'ics:calendar', { cursor: null, last_run: now(), last_ok: now(), last_error: null, items: rows.length });
+  return { items: n, removed: gone };
+}
+
 const HANDLERS = {
+  'ics:calendar': syncIcs,
   'graph:calendar': syncCalendar, 'graph:mail': syncMail, 'graph:files': syncFiles, 'graph:teams': syncTeams,
 };
 
@@ -169,7 +185,7 @@ export async function runSync(env, { only = null, full = false, trigger = 'manua
   const budget = new Budget(maxSubrequests);
   const ms = await vaultGet(env, 'ms');
   const sources = ALL_SOURCES.filter((s) => (!only || s === only || s.startsWith(only + ':')) &&
-    (s.startsWith('notion:') ? notionConfigured(env) && dataSources(env)[s.split(':')[1]] : !!ms));
+    (s.startsWith('notion:') ? notionConfigured(env) && dataSources(env)[s.split(':')[1]] : s.startsWith('ics:') ? !!env.OUTLOOK_ICS_URL : !!ms));
   const states = await Promise.all(sources.map((s) => getState(env, s)));
   const order = sources.map((s, i) => [s, states[i].last_run || '']).sort((a, b) => a[1].localeCompare(b[1])).map((x) => x[0]);
   const results = {};

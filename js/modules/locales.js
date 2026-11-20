@@ -1,6 +1,6 @@
 import * as store from '../core/store.js';
 import { icon, badge, demoBadge, empty, pageHead, seg, bindSeg, demoNotice, on, scoreCls, toast, openSheet, field, readForm } from '../core/ui.js';
-import { esc, matches, norm, fmtDate, fmtDateFull, relDay, isOverdue, toDate, debounce } from '../core/utils.js';
+import { esc, matches, norm, fmtDate, fmtDateFull, fmtDateTime, relDay, isOverdue, toDate, debounce } from '../core/utils.js';
 import { state as syncState, onSync, syncNow } from '../core/sync.js';
 import { backendConfigured } from '../adapters/backend.js';
 
@@ -204,6 +204,60 @@ function proposeChange(l, rerender) {
   });
 }
 
+// ---------- Agenda de Outlook: «Programar visita» sin permisos de escritura ----------
+const TIPOS_VISITA = ['Visita operativa', 'Auditoría', 'Seguimiento', 'Apertura', 'Formación', 'Reunión con franquiciado', 'Otra'];
+const pad = (n) => String(n).padStart(2, '0');
+const tomorrow = () => { const d = new Date(Date.now() + 864e5); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+function visitEvent(l, f) {
+  const start = new Date(`${f.dia}T${f.hora || '10:00'}`);
+  const end = new Date(start.getTime() + (Number(f.duracion) || 60) * 6e4);
+  const subject = `${f.tipo} · ${l.nombre}`;
+  const body = [...(f.notas ? [f.notas, ''] : []), `Programada desde Restalia Ops · ${l.nombre}`, `restalia-local:${l.id}`].join('\n');
+  return { subject, body, start, end, location: destino(l) };
+}
+/** Outlook con el evento ya relleno (web en el ordenador; en el iPhone, la web o la app de Outlook). No necesita permisos: guardas tú. */
+export function outlookComposeUrl(ev) {
+  const q = new URLSearchParams({ path: '/calendar/action/compose', rru: 'addevent', subject: ev.subject, body: ev.body, location: ev.location, startdt: ev.start.toISOString(), enddt: ev.end.toISOString() });
+  return `https://outlook.office.com/calendar/0/deeplink/compose?${q.toString().replace(/\+/g, '%20')}`;
+}
+/** Archivo .ics del evento (calendario del iPhone o cualquier otro). */
+export function icsFile(ev) {
+  const z = (d) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+  const e = (s) => String(s || '').replace(/([,;\\])/g, '\\$1').replace(/\n/g, '\\n');
+  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Restalia Ops//ES', 'BEGIN:VEVENT', `UID:${crypto.randomUUID?.() || Date.now()}@restalia-ops`, `DTSTAMP:${z(new Date())}`,
+    `DTSTART:${z(ev.start)}`, `DTEND:${z(ev.end)}`, `SUMMARY:${e(ev.subject)}`, `LOCATION:${e(ev.location)}`, `DESCRIPTION:${e(ev.body)}`, 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+}
+function scheduleVisit(l) {
+  openSheet({
+    title: 'Programar visita',
+    body: `<form class="form" id="sv-form">
+      <p class="small subtle" style="margin-top:0">Se abre Outlook con la visita ya rellena (título, hora y dirección del local). Revisa y pulsa <b>Guardar</b> en Outlook. No se envía ninguna invitación.</p>
+      ${field({ label: 'Tipo de visita', name: 'tipo', options: TIPOS_VISITA, value: 'Visita operativa' })}
+      <div class="grid g2 keep2">${field({ label: 'Día', name: 'dia', type: 'date', value: tomorrow(), required: true })}${field({ label: 'Hora', name: 'hora', type: 'time', value: '10:00', required: true })}</div>
+      ${field({ label: 'Duración', name: 'duracion', options: [{ value: 30, label: '30 min' }, { value: 60, label: '1 hora' }, { value: 90, label: '1 h 30 min' }, { value: 120, label: '2 horas' }, { value: 180, label: '3 horas' }], value: 60 })}
+      ${field({ label: 'Notas (opcional)', name: 'notas', type: 'textarea', rows: 3, placeholder: 'Objetivo de la visita, con quién te ves…' })}
+      <p class="xs subtle" style="margin:0">${icon('pin', 'sm')} ${esc(destino(l))}</p>
+    </form>`,
+    footer: '<button class="btn" data-ics>Calendario del iPhone (.ics)</button><button class="btn primary" data-ok>Abrir en Outlook</button>',
+    onMount(el, close) {
+      const read = () => { const f = readForm(el.querySelector('#sv-form')); if (!f.dia) { toast('Elige el día'); return null; } return visitEvent(l, f); };
+      el.querySelector('[data-ok]').addEventListener('click', () => {
+        const ev = read(); if (!ev) return;
+        window.open(outlookComposeUrl(ev), '_blank', 'noopener');
+        close(); toast('Guarda la visita en Outlook. Aparecerá en la ficha en la próxima sincronización.');
+      });
+      el.querySelector('[data-ics]').addEventListener('click', () => {
+        const ev = read(); if (!ev) return;
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([icsFile(ev)], { type: 'text/calendar' }));
+        a.download = `visita-${norm(l.nombre).replace(/[^a-z0-9]+/g, '-').slice(0, 40)}.ics`;
+        document.body.appendChild(a); a.click(); a.remove();
+        close(); toast('Abre el archivo para añadir la visita a tu calendario');
+      });
+    },
+  });
+}
+
 function detail(view, id) {
   const l = store.find('locales', id);
   if (!l) { view.innerHTML = `<div class="card" style="margin-top:20px">${empty('Este local no existe o se ha eliminado', 'store')}</div>`; return; }
@@ -218,6 +272,8 @@ function detail(view, id) {
   const lastScore = aud.find((a) => a.puntuacion != null)?.puntuacion;
   const ultimaVisita = visitas[0]?.fecha || l.ultimaVisita || null;
   const isNotion = l.source?.system === 'notion';
+  const nowIso = new Date().toISOString();
+  const citas = store.all('eventos').filter((e) => e.localId === id && !e.hidden && !e.cancelado && (e.fin || e.inicio) >= nowIso).sort((a, b) => String(a.inicio).localeCompare(String(b.inicio))).slice(0, 5);
   const pending = isNotion ? pendingFor(l) : null;
   const tabs = [['resumen', 'Resumen'], ['visitas', `Visitas · ${visitas.length}`], ['incidencias', `Incidencias · ${inc.length}`], ['auditorias', `Auditorías · ${aud.length}`], ['acciones', `Acciones · ${tareas.length}`], ['documentos', 'Documentos']];
   const li = (href, ic, color, title, sub, right = '') => `<div class="li" data-href="${href}"><span class="li-icon ${color}">${icon(ic, 'sm')}</span><div class="li-main"><div class="li-title">${title}</div><div class="li-sub">${sub}</div></div>${right}</div>`;
@@ -231,6 +287,9 @@ function detail(view, id) {
           <div class="card kpi"><div class="k-label">Última visita</div><div class="k-value" style="font-size:20px">${ultimaVisita ? relDay(ultimaVisita) : '—'}</div></div>
         </div>
         <div class="card"><div class="card-h"><h3>${isNotion ? 'Notas generales' : 'Información relevante'}</h3>${isNotion ? '<span class="xs subtle">Notion</span>' : ''}</div><div class="card-b"><p style="white-space:pre-wrap">${esc(l.notasGenerales || l.info || 'Sin información.')}</p></div></div>
+        <div class="card"><div class="card-h"><h3>Próximas citas</h3><button class="btn sm" data-schedule>${icon('calendar', 'sm')}Programar visita</button></div><div class="list">
+          ${citas.map((e) => `<div class="li"><span class="li-icon blue">${icon('calendar', 'sm')}</span><div class="li-main"><div class="li-title">${esc(e.titulo)}</div><div class="li-sub">${e.allDay ? fmtDateFull(e.inicio) : fmtDateTime(e.inicio)}${e.ubicacion ? ` · ${esc(e.ubicacion)}` : ''}</div></div>${e.url ? `<a class="btn sm ghost" href="${esc(e.url)}" target="_blank" rel="noopener">${e.online ? 'Teams' : 'Abrir'}</a>` : ''}</div>`).join('') || `<p class="small subtle" style="padding:0 16px 14px">Sin citas en tu calendario para este local.</p>`}
+        </div></div>
         <div class="card"><div class="card-h"><h3>Notas de Alberto</h3><span class="xs subtle">Solo en este dispositivo</span></div><div class="card-b stack">
           ${notes.map((n) => `<div class="small"><span class="subtle">${fmtDate(n.at)} ·</span> ${esc(n.text)}</div>`).join('') || '<p class="small subtle">Sin notas todavía.</p>'}
           <form id="note-form" class="row"><input class="input" name="text" placeholder="Añadir nota" style="min-height:38px;font-size:15px"><button class="btn sm">Añadir</button></form>
@@ -268,7 +327,7 @@ function detail(view, id) {
     <div class="page-head"><div class="titles"><div class="row wrap"><h1>${esc(l.nombre)}</h1>${demoBadge(l)}${estadoBadge(l)}</div><p>${[l.marca, l.codigo, [l.direccion, m && !norm(l.direccion).includes(nm) ? m : ''].filter(Boolean).join(', ')].filter(Boolean).map(esc).join(' · ')}</p></div></div>
     <div class="tabs">${tabs.map(([k, t]) => `<button data-tab="${k}" class="${st.tab === k ? 'on' : ''}">${t}</button>`).join('')}</div>
     <div id="pane">${panes[st.tab] || panes.resumen}</div>`;
-  if (!view._tb) { view._tb = 1; on(view, 'click', '[data-tab]', (e, b) => { st.tab = b.dataset.tab; detail(view, view._lid); }); on(view, 'click', '[data-propose]', () => { const cur = store.find('locales', view._lid); if (cur) proposeChange(cur, () => detail(view, view._lid)); }); }
+  if (!view._tb) { view._tb = 1; on(view, 'click', '[data-tab]', (e, b) => { st.tab = b.dataset.tab; detail(view, view._lid); }); on(view, 'click', '[data-propose]', () => { const cur = store.find('locales', view._lid); if (cur) proposeChange(cur, () => detail(view, view._lid)); }); on(view, 'click', '[data-schedule]', () => { const cur = store.find('locales', view._lid); if (cur) scheduleVisit(cur); }); }
   view._lid = id;
   view.querySelector('#note-form')?.addEventListener('submit', (e) => {
     e.preventDefault(); const text = e.target.text.value.trim(); if (!text) return;
