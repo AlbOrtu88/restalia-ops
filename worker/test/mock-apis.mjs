@@ -15,6 +15,12 @@ const SCHEMAS = {
     'Marca': { type: 'select', select: { options: [{ name: 'Marca Ficticia' }] } }, 'Municipio': { type: 'rich_text' }, 'Zona': { type: 'rich_text' }, 'Gerente': { type: 'rich_text' }, 'Responsable asignado': { type: 'rich_text' },
     'Franquiciado / titular': { type: 'rich_text' }, 'Prioridad': { type: 'select', select: { options: [{ name: 'Alta' }, { name: 'Media' }, { name: 'Baja' }] } }, 'Próxima visita': { type: 'date' }, 'Notas generales': { type: 'rich_text' } },
   'ds-tareas': { 'Acción': { type: 'title', title: {} }, 'Estado': { type: 'status', status: { options: [{ name: 'Pendiente' }, { name: 'En curso' }, { name: 'Bloqueada' }, { name: 'Hecha' }, { name: 'Cancelada' }], groups: [] } }, 'Fecha compromiso': { type: 'date' }, 'Local': { type: 'rich_text' }, 'Notas': { type: 'rich_text' }, 'Origen': { type: 'select', select: { options: [{ name: 'Visita' }] } }, 'Evidencia de cierre': { type: 'rich_text' } },
+  // Visitas e Incidencias con «Local» ya convertido en relación y la columna antigua renombrada a «Local (texto)».
+  'ds-visitas': { 'Visita': { type: 'title', title: {} }, 'Fecha': { type: 'date' }, 'Local': { type: 'relation', relation: { data_source_id: 'ds-locales' } }, 'Local (texto)': { type: 'rich_text' },
+    'Observaciones': { type: 'rich_text' }, 'Resultado general': { type: 'select', select: { options: [{ name: 'Correcta' }, { name: 'Con incidencias' }, { name: 'Crítica' }] } }, 'Motivo': { type: 'select', select: { options: [{ name: 'Visita rutinaria' }] } } },
+  'ds-incidencias': { 'Incidencia': { type: 'title', title: {} }, 'Estado': { type: 'status', status: { options: [{ name: 'Nueva' }, { name: 'En curso' }, { name: 'Resuelta' }], groups: [] } }, 'Local': { type: 'relation', relation: { data_source_id: 'ds-locales' } },
+    'Categoría': { type: 'select', select: { options: [{ name: 'Mantenimiento' }] } }, 'Prioridad': { type: 'select', select: { options: [{ name: 'Alta' }, { name: 'Media' }] } }, 'Severidad': { type: 'select', select: { options: [{ name: 'Crítica' }, { name: 'Alta' }, { name: 'Media' }, { name: 'Baja' }] } },
+    'Fecha': { type: 'date' }, 'Fecha objetivo': { type: 'date' }, 'Causa raíz': { type: 'rich_text' }, 'Siguiente paso': { type: 'rich_text' }, 'Descripción': { type: 'rich_text' }, 'Acción correctiva': { type: 'rich_text' } },
   'ds-historial': { 'Cambio': { type: 'title', title: {} }, 'Fecha': { type: 'date' }, 'Registro afectado': { type: 'rich_text' }, 'Campo modificado': { type: 'rich_text' }, 'Aprobación vinculada': { type: 'rich_text' } },
 };
 let tareas = [
@@ -24,7 +30,11 @@ let tareas = [
 const locales = [page('bbbbbbbb-0000-0000-0000-000000000001', { 'Local': { type: 'title', title: rt('Local Prueba 1') }, 'Dirección': { type: 'rich_text', rich_text: rt('Calle Falsa 1, 28222 Majadahonda') }, 'Estado': { type: 'select', select: { name: 'Activo' } }, 'Fecha última visita': { type: 'date', date: { start: iso(-5).slice(0, 10) } }, 'Formato': { type: 'select', select: { name: 'Centro comercial' } },
   'Marca': { type: 'select', select: { name: 'Marca Ficticia' } }, 'Municipio': { type: 'rich_text', rich_text: rt('Majadahonda') }, 'Zona': { type: 'rich_text', rich_text: rt('Comunidad de Madrid') }, 'Gerente': { type: 'rich_text', rich_text: rt('Gerente Ficticio') },
   'Responsable asignado': { type: 'rich_text', rich_text: rt('Responsable Ficticio') }, 'Franquiciado / titular': { type: 'rich_text', rich_text: [] }, 'Prioridad': { type: 'select', select: null }, 'Próxima visita': { type: 'date', date: null }, 'Notas generales': { type: 'rich_text', rich_text: rt('Nota ficticia') } })];
-const pagesOf = { 'ds-locales': () => locales, 'ds-tareas': () => tareas, 'ds-historial': () => [] };
+const incidencias = [page('dddddddd-0000-0000-0000-000000000001', { 'Incidencia': { type: 'title', title: rt('Fuga FICTICIA') }, 'Estado': { type: 'status', status: { name: 'En curso' } }, 'Local': { type: 'relation', relation: [{ id: 'bbbbbbbb-0000-0000-0000-000000000001' }] },
+  'Categoría': { type: 'select', select: { name: 'Mantenimiento' } }, 'Prioridad': { type: 'select', select: { name: 'Alta' } }, 'Severidad': { type: 'select', select: { name: 'Alta' } }, 'Fecha': { type: 'date', date: { start: iso(-2).slice(0, 10) } },
+  'Fecha objetivo': { type: 'date', date: { start: iso(5).slice(0, 10) } }, 'Causa raíz': { type: 'rich_text', rich_text: rt('Junta gastada') }, 'Siguiente paso': { type: 'rich_text', rich_text: rt('Llamar al técnico') }, 'Descripción': { type: 'rich_text', rich_text: [] }, 'Acción correctiva': { type: 'rich_text', rich_text: [] } })];
+const pagesOf = { 'ds-locales': () => locales, 'ds-tareas': () => tareas, 'ds-historial': () => [], 'ds-visitas': () => [], 'ds-incidencias': () => incidencias };
+export const lastCreated = [];
 
 function jwt(payload) { const b = (o) => Buffer.from(JSON.stringify(o)).toString('base64url'); return `${b({ alg: 'none' })}.${b(payload)}.x`; }
 
@@ -45,9 +55,9 @@ const routes = [
   }],
   // Nominatim simulado: encuentra direcciones de Majadahonda; el resto, sin resultado.
   ['GET', /^\/geo\/search$/, (m, b, url) => { const q = new URL(url, B).searchParams.get('q') || ''; return [200, /majadahonda/i.test(q) && !/local/i.test(q) ? [{ lat: '40.4728', lon: '-3.8722', display_name: 'Majadahonda (ficticio)' }] : []]; }],
-  ['GET', /^\/notion\/pages\/([^/]+)$/, (m) => { const pg = [...tareas, ...locales].find((t) => t.id === m[1]); return pg ? [200, pg] : [404, { code: 'object_not_found' }]; }],
-  ['PATCH', /^\/notion\/pages\/([^/]+)$/, (m, body) => { const pg = [...tareas, ...locales].find((t) => t.id === m[1]); if (!pg) return [404, {}]; const pr = JSON.parse(body).properties; Object.assign(pg.properties, Object.fromEntries(Object.entries(pr).map(([k, v]) => [k, { type: Object.keys(v)[0], ...v }]))); pg.last_edited_time = new Date().toISOString(); return [200, pg]; }],
-  ['POST', /^\/notion\/pages$/, (m, body) => [200, { object: 'page', id: 'cccccccc-0000-0000-0000-00000000000' + log.length % 10, url: 'https://www.notion.so/nueva', body: JSON.parse(body) }]],
+  ['GET', /^\/notion\/pages\/([^/]+)$/, (m) => { const pg = [...tareas, ...locales, ...incidencias].find((t) => t.id === m[1]); return pg ? [200, pg] : [404, { code: 'object_not_found' }]; }],
+  ['PATCH', /^\/notion\/pages\/([^/]+)$/, (m, body) => { const pg = [...tareas, ...locales, ...incidencias].find((t) => t.id === m[1]); if (!pg) return [404, {}]; const pr = JSON.parse(body).properties; Object.assign(pg.properties, Object.fromEntries(Object.entries(pr).map(([k, v]) => [k, { type: Object.keys(v)[0], ...v }]))); pg.last_edited_time = new Date().toISOString(); return [200, pg]; }],
+  ['POST', /^\/notion\/pages$/, (m, body) => { lastCreated.push(JSON.parse(body)); return [200, { object: 'page', id: 'cccccccc-0000-0000-0000-00000000000' + log.length % 10, url: 'https://www.notion.so/nueva', body: JSON.parse(body) }]; }],
   ['GET', /^\/graph\/me\/calendarView\/delta/, (m, b, url) => url.includes('page=2')
     ? [200, { value: [{ id: 'ev2', '@removed': { reason: 'deleted' } }], '@odata.deltaLink': `${B}/graph/me/calendarView/delta?token=d1` }]
     : [200, { value: [{ id: 'ev1', subject: 'Reunión FICTICIA', start: { dateTime: iso(1).slice(0, 19) }, end: { dateTime: iso(1.05).slice(0, 19) }, attendees: [{}], isOnlineMeeting: true, webLink: 'https://outlook/ev1', showAs: 'busy' }], '@odata.nextLink': `${B}/graph/me/calendarView/delta?page=2` }]],
@@ -75,6 +85,7 @@ http.createServer((req, res) => {
   req.on('end', () => {
     log.push(`${req.method} ${req.url}`);
     if (req.url === '/__log') { res.end(JSON.stringify(log)); return; }
+    if (req.url === '/__created') { res.end(JSON.stringify(lastCreated)); return; }
     if (req.url === '/ics/calendar.ics') { res.writeHead(200, { 'Content-Type': 'text/calendar' }); res.end(icsText()); return; }
     if (req.url === '/__ics-cancel') { icsCancel = true; res.end('ok'); return; }
     const path = req.url.split('?')[0];

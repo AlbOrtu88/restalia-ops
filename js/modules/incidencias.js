@@ -3,11 +3,12 @@ import { icon, badge, demoBadge, sourceBadge, empty, pageHead, seg, bindSeg, fie
 import { esc, matches, groupBy, fmtDate, fmtDateFull, fmtDateTime, relDay, isOverdue, isoDate, addDays, toDate, debounce } from '../core/utils.js';
 import { putMedia, hydrateMedia } from '../core/media.js';
 import { openTaskForm } from './tareas.js';
-import { proposeToNotion } from './visitas.js';
+import { proposeToNotion, incidenciaDatos } from './visitas.js';
 
 export const ESTADOS = ['Nueva', 'En curso', 'Pendiente', 'Resuelta', 'Cerrada'];
 const CATS = ['Mantenimiento', 'Seguridad alimentaria', 'Personal', 'Proveedor', 'Cliente', 'Sistemas', 'Limpieza'];
 const PRIOS = ['Crítica', 'Alta', 'Media', 'Baja'];
+const SEVERIDADES = ['Crítica', 'Alta', 'Media', 'Baja'];
 const st = { view: 'kanban', q: '', prio: '', cat: '', closed: false };
 
 function openForm(localId = '') {
@@ -18,10 +19,13 @@ function openForm(localId = '') {
       ${field({ label: 'Título', name: 'titulo', required: true, placeholder: 'Qué ocurre, en pocas palabras' })}
       ${field({ label: 'Local', name: 'localId', required: true, value: localId, options: [{ value: '', label: 'Elige un local' }, ...store.all('locales').map((l) => ({ value: l.id, label: l.nombre }))] })}
       <div class="form-row">${field({ label: 'Categoría', name: 'categoria', options: CATS })}${field({ label: 'Prioridad', name: 'prioridad', options: PRIOS, value: 'Media' })}</div>
+      <div class="form-row">${field({ label: 'Severidad', name: 'severidad', options: SEVERIDADES, value: 'Media' })}${field({ label: 'Fecha objetivo', name: 'fechaObjetivo', type: 'date', hint: 'Cuándo debería estar resuelta' })}</div>
       ${field({ label: 'Descripción', name: 'descripcion', type: 'textarea' })}
       <div class="field"><label>Evidencias</label><div class="photos" id="i-photos"><label class="photo-add" aria-label="Añadir foto">${icon('camera')}<input type="file" accept="image/*" capture="environment" multiple hidden id="i-file"></label></div></div>
       <div class="form-row">${field({ label: 'Responsable', name: 'responsable', value: 'Alberto' })}${field({ label: 'Fecha límite', name: 'limite', type: 'date', value: isoDate(addDays(new Date(), 3)) })}</div>
       ${field({ label: 'Acción correctiva', name: 'accion', placeholder: 'Qué se va a hacer' })}
+      ${field({ label: 'Causa raíz', name: 'causaRaiz', placeholder: 'Por qué ha pasado (si se sabe)' })}
+      ${field({ label: 'Siguiente paso', name: 'siguientePaso', placeholder: 'Lo próximo que hay que hacer' })}
     </form>`,
     footer: '<button class="btn" data-close>Cancelar</button><button class="btn primary" data-save>Abrir incidencia</button>',
     onMount(el, close) {
@@ -35,7 +39,9 @@ function openForm(localId = '') {
         const v = readForm(f);
         const rec = store.add('incidencias', { ...v, id: store.nextIncidentId(), estado: 'Nueva', fecha: new Date().toISOString(), limite: v.limite ? new Date(v.limite + 'T18:00').toISOString() : null, seguimiento: [], evidencias: photos });
         store.log(`Se abrió la incidencia ${rec.id} en ${store.localName(v.localId)}`, 'incidencias');
-        close(); toast(`Incidencia ${rec.id} abierta`); location.hash = `#/incidencias/${rec.id}`;
+        // Local real de Notion: la incidencia se propone a Notion automáticamente (se crea al aprobarla).
+        const prop = store.find('locales', v.localId)?.source?.system === 'notion' ? proposeToNotion('incidencia', rec, incidenciaDatos(rec)) : null;
+        close(); toast(`Incidencia ${rec.id} abierta${prop ? ' · enviada a Aprobaciones para Notion' : ''}`); location.hash = `#/incidencias/${rec.id}`;
       });
     },
   });
@@ -103,17 +109,20 @@ function detail(view, id) {
   const i = store.find('incidencias', id);
   if (!i) { view.innerHTML = `<div class="card" style="margin-top:20px">${empty('Incidencia no encontrada', 'alert')}</div>`; return; }
   const tasks = store.all('tareas').filter((t) => t.origenRef === id);
-  const proposed = store.all('aprobaciones').some((a) => a.ref?.id === id);
+  const proposed = store.all('aprobaciones').some((a) => a.ref?.id === id && !['Rechazada', 'Error'].includes(a.estado));
+  const canPropose = !i.demo && i.source?.system !== 'notion';
   const idx = ESTADOS.indexOf(i.estado);
   view.innerHTML = `
     <div style="margin:10px 0 4px"><a href="#/incidencias" class="small">${icon('left', 'sm')} Incidencias</a></div>
     <div class="page-head"><div class="titles"><p class="mono subtle">${i.id}</p><div class="row wrap"><h1>${esc(i.titulo)}</h1>${demoBadge(i)}${sourceBadge(i)}</div><p><a href="#/locales/${i.localId}">${esc(store.localName(i.localId))}</a> · ${esc(i.categoria)} · abierta ${relDay(i.fecha).toLowerCase()}</p></div>
-      <div class="btn-row">${!i.demo ? `<button class="btn sm" data-notion ${proposed ? 'disabled' : ''}>${icon('upload', 'sm')}${proposed ? 'Propuesta a Notion' : 'Proponer a Notion'}</button>` : ''}</div></div>
+      <div class="btn-row">${i.notionUrl ? `<a class="btn sm" href="${esc(i.notionUrl)}" target="_blank" rel="noopener">${icon('db', 'sm')}Ver en Notion</a>` : canPropose ? `<button class="btn sm" data-notion ${proposed ? 'disabled' : ''}>${icon('upload', 'sm')}${proposed ? 'Propuesta a Notion' : 'Proponer a Notion'}</button>` : ''}</div></div>
     <div class="card pad" style="margin-bottom:14px"><div class="h4 small subtle" style="margin-bottom:10px">Estado</div>
       <div class="seg" style="width:100%;overflow-x:auto">${ESTADOS.map((e, n) => `<button data-state="${e}" class="${e === i.estado ? 'on' : ''}" style="flex:1;${n < idx ? 'color:var(--green)' : ''}">${n < idx ? icon('check', 'sm') : ''}${e}</button>`).join('')}</div></div>
     <div class="detail-grid"><div class="stack">
       <div class="card pad"><h3>Descripción</h3><p style="margin-top:8px;white-space:pre-wrap">${esc(i.descripcion || '—')}</p>
         <h3 style="margin-top:18px">Acción correctiva</h3><p style="margin-top:8px">${esc(i.accion || 'Sin definir')}</p>
+        <div class="row between" style="margin-top:18px"><h3>Análisis</h3>${!i.demo ? `<button class="btn sm" data-analisis>${icon('edit', 'sm')}Editar</button>` : ''}</div>
+        <dl class="props" style="margin-top:8px"><dt>Causa raíz</dt><dd>${esc(i.causaRaiz || 'Sin analizar')}</dd><dt>Siguiente paso</dt><dd>${esc(i.siguientePaso || '—')}</dd></dl>
         ${(i.evidencias || []).length ? `<h3 style="margin-top:18px">Evidencias</h3><div class="photos" style="margin-top:8px">${i.evidencias.map((m) => `<img class="photo" data-media="${m}" alt="Evidencia" style="width:110px;height:110px">`).join('')}</div>` : ''}</div>
       <div class="card"><div class="card-h"><h3>Tareas derivadas</h3><button class="btn sm" data-task>${icon('plus', 'sm')}Tarea</button></div><div class="list">
         ${tasks.map((t) => `<div class="li" data-href="#/tareas/${t.id}"><span class="li-icon teal">${icon('checksq', 'sm')}</span><div class="li-main"><div class="li-title">${esc(t.titulo)}</div><div class="li-sub">${esc(t.responsable)} · ${relDay(t.limite)}</div></div>${badge(t.estado)}</div>`).join('') || empty('Sin tareas derivadas', 'checksq')}</div></div>
@@ -123,9 +132,10 @@ function detail(view, id) {
       </div></div>
     </div>
     <div class="card pad"><dl class="props">
-      <dt>Prioridad</dt><dd>${badge(i.prioridad)}</dd><dt>Estado</dt><dd>${badge(i.estado)}</dd>
+      <dt>Prioridad</dt><dd>${badge(i.prioridad)}</dd>${i.severidad ? `<dt>Severidad</dt><dd>${badge(i.severidad)}</dd>` : ''}<dt>Estado</dt><dd>${badge(i.estado)}</dd>
       <dt>Responsable</dt><dd>${esc(i.responsable)}</dd><dt>Fecha</dt><dd>${fmtDateFull(i.fecha)}</dd>
       <dt>Fecha límite</dt><dd style="${isOverdue(i.limite, ['Resuelta', 'Cerrada'].includes(i.estado)) ? 'color:var(--red);font-weight:600' : ''}">${i.limite ? `${fmtDateFull(i.limite)} (${relDay(i.limite)})` : '—'}</dd>
+      ${i.fechaObjetivo ? `<dt>Fecha objetivo</dt><dd style="${isOverdue(i.fechaObjetivo, ['Resuelta', 'Cerrada'].includes(i.estado)) ? 'color:var(--red);font-weight:600' : ''}">${fmtDateFull(i.fechaObjetivo)} (${relDay(i.fechaObjetivo)})</dd>` : ''}
       <dt>Local</dt><dd><a href="#/locales/${i.localId}">${esc(store.localName(i.localId))}</a></dd>
       <dt>Origen</dt><dd>${i.demo ? 'Ejemplo DEMO' : i.source?.system === 'local' ? 'Este dispositivo' : 'Notion'}</dd>
     </dl></div></div>`;
@@ -137,7 +147,31 @@ function detail(view, id) {
   if (view._db) return; view._db = 1;
   on(view, 'click', '[data-state]', (e, b) => { setState(id, b.dataset.state); detail(view, id); });
   on(view, 'click', '[data-task]', () => { const x = store.find('incidencias', id); openTaskForm({ titulo: x.accion || `Resolver ${id}`, localId: x.localId, prioridad: x.prioridad === 'Crítica' ? 'Crítica' : 'Alta', origenRef: id }, { onSaved: () => detail(view, id) }); });
-  on(view, 'click', '[data-notion]', () => { const x = store.find('incidencias', id); proposeToNotion('incidencia', x, { ID: x.id, Título: x.titulo, Local: store.localName(x.localId), Prioridad: x.prioridad, Estado: x.estado }); toast('Propuesta enviada a Aprobaciones'); detail(view, id); });
+  on(view, 'click', '[data-notion]', () => { const x = store.find('incidencias', id); toast(proposeToNotion('incidencia', x, incidenciaDatos(x)) ? 'Propuesta enviada a Aprobaciones' : 'Ya hay una propuesta para esta incidencia', 'upload'); detail(view, id); });
+  on(view, 'click', '[data-analisis]', () => editAnalisis(id, () => detail(view, id)));
+}
+
+// Severidad, fecha objetivo, causa raíz y siguiente paso. En una incidencia de Notion el cambio va a Aprobaciones (store.update).
+function editAnalisis(id, done) {
+  const x = store.find('incidencias', id);
+  openSheet({
+    title: 'Análisis de la incidencia',
+    body: `<form class="form" id="an-form">
+      <div class="form-row">${field({ label: 'Severidad', name: 'severidad', options: [{ value: '', label: 'Sin indicar' }, ...SEVERIDADES], value: x.severidad || '' })}${field({ label: 'Fecha objetivo', name: 'fechaObjetivo', type: 'date', value: x.fechaObjetivo ? String(x.fechaObjetivo).slice(0, 10) : '' })}</div>
+      ${field({ label: 'Causa raíz', name: 'causaRaiz', type: 'textarea', rows: 3, value: x.causaRaiz || '' })}
+      ${field({ label: 'Siguiente paso', name: 'siguientePaso', value: x.siguientePaso || '' })}
+      ${x.source?.system === 'notion' ? '<p class="hint">Es un registro de Notion: el cambio se guarda aquí y se envía a Aprobaciones para escribirlo en Notion.</p>' : ''}
+    </form>`,
+    footer: '<button class="btn" data-close>Cancelar</button><button class="btn primary" data-save>Guardar</button>',
+    onMount(el, close) {
+      el.querySelector('[data-save]').addEventListener('click', () => {
+        const v = readForm(el.querySelector('#an-form'));
+        const patch = Object.fromEntries(Object.entries(v).filter(([k, val]) => (val || null) !== (x[k] ? String(x[k]).slice(0, k === 'fechaObjetivo' ? 10 : undefined) : null)).map(([k, val]) => [k, val || null]));
+        if (Object.keys(patch).length) store.update('incidencias', id, patch);
+        close(); toast(Object.keys(patch).length ? (x.source?.system === 'notion' ? 'Guardado · cambio enviado a Aprobaciones' : 'Análisis guardado') : 'Sin cambios'); done();
+      });
+    },
+  });
 }
 
 export default {

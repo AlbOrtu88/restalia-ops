@@ -8,13 +8,35 @@ const MOTIVOS = ['Visita rutinaria', 'Visita sin aviso', 'Seguimiento de inciden
 const st = { q: '', res: '' };
 const resColor = { Satisfactoria: 'green', 'Con incidencias': 'amber', 'Crítica': 'red' };
 
+// Alta en Notion de una visita o incidencia creada en la app. Siempre pasa por Aprobaciones (nunca se escribe sin aprobar).
+// El local va como relación (id de la página del local en Notion) y, de respaldo, con su nombre en texto.
+// El backend omite lo que no encaje con la base (sin inventar opciones) y lo devuelve en «skipped».
+export function notionFields(kind, rec) {
+  const l = store.find('locales', rec.localId);
+  const local = { localRel: l?.source?.system === 'notion' ? l.id : undefined, localNombre: l?.nombre || undefined };
+  const clean = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v != null && v !== ''));
+  if (kind === 'visita') {
+    return clean({ titulo: `${rec.motivo || 'Visita'} · ${l?.nombre || 'local'}`, fecha: rec.fecha, ...local, observaciones: rec.observaciones, resultado: rec.resultado, motivo: rec.motivo });
+  }
+  return clean({ titulo: rec.titulo, ...local, categoria: rec.categoria, prioridad: rec.prioridad, severidad: rec.severidad, estado: rec.estado, fecha: rec.fecha ? String(rec.fecha).slice(0, 10) : null,
+    limite: rec.limite ? String(rec.limite).slice(0, 10) : null, descripcion: rec.descripcion, accion: rec.accion, causaRaiz: rec.causaRaiz, siguientePaso: rec.siguientePaso, fechaObjetivo: rec.fechaObjetivo });
+}
+
 export function proposeToNotion(kind, rec, datos) {
-  store.add('aprobaciones', {
+  const col = kind === 'visita' ? 'visitas' : 'incidencias';
+  if (rec.demo || rec.source?.system === 'notion' || store.all('aprobaciones').some((a) => a.ref?.id === rec.id && !['Rechazada', 'Error'].includes(a.estado))) return null;
+  const l = store.find('locales', rec.localId);
+  return store.add('aprobaciones', {
     accion: `Crear ${kind} en Notion`, sistema: 'Notion', motivo: `Registro creado por Alberto en la app (${rec.id})`,
-    datos, resultado: `Nuevo registro en la base «${kind === 'visita' ? 'Visitas' : kind === 'incidencia' ? 'Incidencias' : 'Acciones y seguimientos'}» con referencia a ${rec.id}.`,
-    estado: 'Pendiente', creada: new Date().toISOString(), origen: 'Alberto', historial: [], ref: { col: kind === 'visita' ? 'visitas' : 'incidencias', id: rec.id },
+    datos: { ...datos, 'Enlace al local': l?.source?.system === 'notion' ? 'Relación con la ficha del local en Notion' : 'Solo nombre (el local no está en Notion)' },
+    resultado: `Nuevo registro en la base «${kind === 'visita' ? 'Visitas' : 'Incidencias'}» enlazado al local.`,
+    op: { type: 'notion.create', collection: col, fields: notionFields(kind, rec) },
+    estado: 'Pendiente', creada: new Date().toISOString(), origen: 'Alberto', historial: [], ref: { col, id: rec.id },
   });
 }
+export const visitaDatos = (v) => ({ Local: store.localName(v.localId), Fecha: fmtDateTime(v.fecha), Motivo: v.motivo, Resultado: v.resultado, Observaciones: v.observaciones?.slice(0, 120) || '' });
+export const incidenciaDatos = (x) => ({ Título: x.titulo, Local: store.localName(x.localId), Prioridad: x.prioridad, Severidad: x.severidad || '—', Estado: x.estado });
+const isNotionLocal = (id) => store.find('locales', id)?.source?.system === 'notion';
 
 function openForm(localId = '') {
   const locs = store.all('locales').map((l) => ({ value: l.id, label: l.nombre }));
@@ -58,8 +80,14 @@ function openForm(localId = '') {
         const rec = store.add('visitas', { localId: v.localId, fecha: new Date(v.fecha).toISOString(), motivo: v.motivo, objetivo: v.objetivo, observaciones: v.observaciones, resultado: v.resultado, responsable: v.responsable, seguimiento, incidencias: incIds, acciones, fotos: photos }, { prefix: 'vis' });
         acciones.forEach((a) => store.add('tareas', { titulo: a, descripcion: `Acción correctiva de la visita a ${store.localName(v.localId)}`, responsable: store.find('locales', v.localId)?.responsable || 'Alberto', prioridad: v.resultado === 'Crítica' ? 'Alta' : 'Media', estado: 'Pendiente', creada: new Date().toISOString(), limite: addDays(new Date(), 7).toISOString(), proyectoId: null, localId: v.localId, evidencias: [], origenRef: rec.id }, { prefix: 'tsk' }));
         store.log(`Alberto registró una visita a ${store.localName(v.localId)}`, 'visitas');
+        // Local real de Notion: la visita (y la incidencia detectada) se proponen a Notion automáticamente.
+        let propuestas = 0;
+        if (isNotionLocal(v.localId)) {
+          if (proposeToNotion('visita', rec, visitaDatos(rec))) propuestas++;
+          incIds.forEach((iid) => { const inc = store.find('incidencias', iid); if (inc && proposeToNotion('incidencia', inc, incidenciaDatos(inc))) propuestas++; });
+        }
         close();
-        toast(`Visita guardada${acciones.length ? ` · ${acciones.length} tareas creadas` : ''}${seguimiento && !v.seguimiento ? ' · seguimiento a 7 días' : ''}`);
+        toast(`Visita guardada${acciones.length ? ` · ${acciones.length} tareas creadas` : ''}${seguimiento && !v.seguimiento ? ' · seguimiento a 7 días' : ''}${propuestas ? ' · enviada a Aprobaciones para Notion' : ''}`);
         location.hash = `#/visitas/${rec.id}`;
       });
     },
@@ -122,7 +150,7 @@ function report(view, id) {
   if (view._rb) return; view._rb = 1;
   on(view, 'click', '[data-print]', () => window.print());
   on(view, 'click', '[data-notion]', () => {
-    proposeToNotion('visita', v, { Local: l.nombre, Fecha: fmtDateTime(v.fecha), Motivo: v.motivo, Resultado: v.resultado, Observaciones: v.observaciones?.slice(0, 120) || '' });
+    proposeToNotion('visita', v, visitaDatos(v));
     toast('Propuesta enviada a Aprobaciones'); report(view, id);
   });
   on(view, 'click', '[data-del]', async () => { if (await confirmSheet({ title: 'Eliminar visita', text: 'Se elimina de este dispositivo. Las tareas e incidencias creadas se mantienen.', confirm: 'Eliminar', danger: true })) { store.remove('visitas', id); toast('Visita eliminada'); location.hash = '#/visitas'; } });

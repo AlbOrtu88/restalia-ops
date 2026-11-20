@@ -123,6 +123,16 @@ Con un ordenador con `wrangler` también vale: `cd worker && npx wrangler deploy
 - Mapeo: `responsableAsignado` ← «Responsable asignado», `gerente` ← «Gerente» (nunca se mezclan), `municipio` ← «Municipio», `zona`, `prioridad`, `proximaVisita`, `franquiciado`, `notasGenerales`, `notionEditedAt` (versión de la página). `ciudad` y `responsable` se mantienen como alias por compatibilidad.
 - Desde la app solo se pueden **proponer** cambios de Estado, Próxima visita y Notas generales. Se ejecutan solo al aprobarlos en Aprobaciones y con `NOTION_WRITES_ENABLED="true"`. Antes de escribir, el backend comprueba que la página no haya cambiado en Notion desde la propuesta (si cambió → 409 y no se escribe).
 
+### Visitas e incidencias (fase 4)
+
+- En Notion, «Local» es una **relación** con Locales en Visitas, Incidencias y Acciones y seguimientos (la columna de texto antigua se conserva como «Local (texto)»). El backend lee el id del local de la relación y, si no hay relación, usa el texto (`localId` ← relación, o nombre como respaldo).
+- Incidencias suma `severidad` ← «Severidad», `fechaObjetivo` ← «Fecha objetivo», `causaRaiz` ← «Causa raíz», `siguientePaso` ← «Siguiente paso». Acciones suma `siguientePaso`.
+- Al guardar una visita o incidencia de un **local de Notion**, la app crea automáticamente una propuesta `notion.create` en Aprobaciones con el local como relación (y su nombre de respaldo). Nada se escribe hasta aprobarla.
+- Al crear, el backend **omite** (sin inventar nada) los campos que la base no tenga, las opciones de select/estado que no existan y la relación si «Local» todavía es texto. Lo omitido vuelve en `skipped` y queda en el historial de la aprobación.
+- Tras ejecutarse, el registro de la app guarda la página creada (`notionRef`). Cuando esa página llega en la siguiente sincronización, la copia local se oculta y la de Notion conserva las fotos: no hay duplicados.
+- Modificables tras aprobación en Incidencias: Estado, Acción correctiva, Causa raíz, Siguiente paso, Fecha objetivo y Severidad (se pueden vaciar).
+- Crear en Locales desde la app no está permitido (422).
+
 ### Mapa de locales (gratis)
 
 - Coordenadas: el backend geocodifica la Dirección (+ Municipio) de cada local con **Nominatim de OpenStreetMap** (gratis, sin clave, máx. 1 consulta/s, User-Agent identificable). Lo hace poco a poco en cada cron (y en «Actualizar ahora»), unos 6 locales por ejecución, y guarda el resultado en la tabla `geocache` de D1. **No escribe nada en Notion.** Si cambia la dirección en Notion, se vuelve a geocodificar. Si la dirección no se encuentra y el local está en un centro comercial («CC …» en el nombre o la dirección), se busca el centro comercial por su nombre. Si tampoco aparece, se usa el centro del municipio (marcado como «aproximada») y se reintenta a los 7 días.

@@ -106,7 +106,7 @@ export function add(col, rec, { prefix } = {}) {
   return r;
 }
 // Campos de registros de Notion cuyo cambio en la app se propone a Notion (vía Aprobaciones). Coincide con WRITABLE del backend.
-const NOTION_WRITABLE = { locales: ['estado', 'proximaVisita', 'notasGenerales'], tareas: ['estado', 'limite', 'descripcion', 'evidencia'], incidencias: ['estado', 'accion'], visitas: ['estado', 'observaciones', 'resultado'] };
+const NOTION_WRITABLE = { locales: ['estado', 'proximaVisita', 'notasGenerales'], tareas: ['estado', 'limite', 'descripcion', 'evidencia'], incidencias: ['estado', 'accion', 'causaRaiz', 'siguientePaso', 'fechaObjetivo', 'severidad'], visitas: ['estado', 'observaciones', 'resultado'] };
 
 export function update(col, id, patch) {
   const i = data[col].findIndex((r) => r.id === id);

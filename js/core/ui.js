@@ -116,7 +116,7 @@ export const seg = (name, options, value) => `<div class="seg" role="tablist" da
   .map((o) => `<button type="button" role="tab" data-val="${o.value}" class="${o.value === value ? 'on' : ''}" aria-selected="${o.value === value}">${o.icon ? icon(o.icon, 'sm') : ''}${esc(o.label)}</button>`)
   .join('')}</div>`;
 export const demoNotice = (text) => `<div class="notice demo">${icon('info')}<div>${text}</div></div>`;
-export const avatar = (name = '?') => `<span class="avatar" title="${esc(name)}">${esc(name.split(/\s+/).filter((w) => !/^demo$/i.test(w)).map((w) => w[0]).slice(0, 2).join('').toUpperCase())}</span>`;
+export const avatar = (raw) => { const name = String(raw || '?'); return `<span class="avatar" title="${esc(name)}">${esc(name.split(/\s+/).filter((w) => !/^demo$/i.test(w)).map((w) => w[0]).slice(0, 2).join('').toUpperCase() || '?')}</span>`; };
 export const progress = (pct) => `<div class="progress" role="progressbar" aria-valuenow="${Math.round(pct)}" aria-valuemin="0" aria-valuemax="100"><span style="width:${Math.max(0, Math.min(100, pct))}%"></span></div>`;
 export const scoreCls = (n) => (n == null ? '' : n >= 85 ? 'good' : n >= 70 ? 'mid' : 'bad');
 
