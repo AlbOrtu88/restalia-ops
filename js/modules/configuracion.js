@@ -105,6 +105,8 @@ export default {
             return `<tr><td><b>${l.id}</b></td><td>${esc(l.name)}</td><td>${esc(l.src)}</td><td style="text-align:right">${extra}</td><td style="text-align:right">${l.cols.length ? d : '—'}</td></tr>`;
           }).join('')}</tbody></table></div>
         <p class="xs subtle">Todo se guarda en este dispositivo (${Math.round(stats.bytes / 1024)} KB más las fotos). Cada registro conserva su sistema de origen y su referencia para sincronizar sin duplicados.</p>
+        <div class="row between" style="margin:14px 0;gap:12px"><div><div class="small"><b>Enviar mis visitas e incidencias a Notion al guardar</b></div><div class="xs subtle">Se crean en Notion al momento, sin pasar por Aprobaciones. Los cambios en registros que ya están en Notion siguen necesitando tu aprobación.</div></div>
+          <label class="switch"><input type="checkbox" data-notiondirecto ${s.notionDirecto !== false ? 'checked' : ''} aria-label="Enviar mis visitas e incidencias a Notion al guardar"><span></span></label></div>
         <div class="row between" style="margin:14px 0;gap:12px"><div><div class="small"><b>Mostrar datos de ejemplo</b></div><div class="xs subtle">${demoCount} registros DEMO</div></div>
           <label class="switch"><input type="checkbox" data-showdemo ${s.showDemo ? 'checked' : ''} aria-label="Mostrar datos de ejemplo"><span></span></label></div>
         <div class="btn-row" style="flex-wrap:wrap">
@@ -264,6 +266,7 @@ export default {
 
     // Datos
     $('[data-showdemo]').addEventListener('change', (e) => { store.setSettings({ showDemo: e.target.checked }); });
+    $('[data-notiondirecto]').addEventListener('change', (e) => { store.setSettings({ notionDirecto: e.target.checked }); });
     $('[data-export]').addEventListener('click', () => { download(`restalia-copia-${new Date().toISOString().slice(0, 10)}.json`, store.exportAll(), 'application/json'); toast('Copia descargada', 'download'); });
     $('[data-import]').addEventListener('change', async (e) => {
       const f = e.target.files[0]; if (!f) return;

@@ -2,6 +2,7 @@ import * as store from '../core/store.js';
 import { icon, badge, demoBadge, sourceBadge, empty, pageHead, field, readForm, openSheet, toast, on, demoNotice, compressImage, confirmSheet } from '../core/ui.js';
 import { esc, matches, fmtDateFull, fmtDateTime, fmtDate, relDay, isoLocal, isoDate, addDays, toDate, debounce } from '../core/utils.js';
 import { putMedia, hydrateMedia } from '../core/media.js';
+import { backendConfigured } from '../adapters/backend.js';
 
 const RESULTADOS = ['Satisfactoria', 'Con incidencias', 'Crítica'];
 const MOTIVOS = ['Visita rutinaria', 'Visita sin aviso', 'Seguimiento de incidencia', 'Visita de calidad', 'Preparación de auditoría', 'Visita de apertura', 'Otro'];
@@ -26,13 +27,22 @@ export function proposeToNotion(kind, rec, datos) {
   const col = kind === 'visita' ? 'visitas' : 'incidencias';
   if (rec.demo || rec.source?.system === 'notion' || store.all('aprobaciones').some((a) => a.ref?.id === rec.id && !['Rechazada', 'Error'].includes(a.estado))) return null;
   const l = store.find('locales', rec.localId);
-  return store.add('aprobaciones', {
+  const apr = store.add('aprobaciones', {
     accion: `Crear ${kind} en Notion`, sistema: 'Notion', motivo: `Registro creado por Alberto en la app (${rec.id})`,
     datos: { ...datos, 'Enlace al local': l?.source?.system === 'notion' ? 'Relación con la ficha del local en Notion' : 'Solo nombre (el local no está en Notion)' },
     resultado: `Nuevo registro en la base «${kind === 'visita' ? 'Visitas' : 'Incidencias'}» enlazado al local.`,
     op: { type: 'notion.create', collection: col, fields: notionFields(kind, rec) },
     estado: 'Pendiente', creada: new Date().toISOString(), origen: 'Alberto', historial: [], ref: { col, id: rec.id },
   });
+  // Alta directa (ajuste activado por defecto): lo que Alberto guarda se crea en Notion al momento, sin pasar por «Aprobar».
+  // Solo altas nuevas de visitas e incidencias; los cambios en registros que ya están en Notion siguen pasando por Aprobaciones.
+  if (store.getSettings().notionDirecto !== false && backendConfigured()) {
+    import('./aprobaciones.js').then((m) => m.execute(apr, { auto: true })).then((r) => {
+      if (!r) return;
+      toast(r.ok ? `${kind === 'visita' ? 'Visita creada' : 'Incidencia creada'} en Notion${r.skipped.length ? ` · ${r.skipped.length} campo(s) sin rellenar` : ''}` : `No se pudo crear en Notion: queda en Aprobaciones (${r.error})`, r.ok ? 'check' : 'alert');
+    }).catch(() => {});
+  }
+  return apr;
 }
 export const visitaDatos = (v) => ({ Local: store.localName(v.localId), Fecha: fmtDateTime(v.fecha), Motivo: v.motivo, Resultado: v.resultado, Observaciones: v.observaciones?.slice(0, 120) || '' });
 export const incidenciaDatos = (x) => ({ Título: x.titulo, Local: store.localName(x.localId), Prioridad: x.prioridad, Severidad: x.severidad || '—', Estado: x.estado });
@@ -87,7 +97,7 @@ function openForm(localId = '') {
           incIds.forEach((iid) => { const inc = store.find('incidencias', iid); if (inc && proposeToNotion('incidencia', inc, incidenciaDatos(inc))) propuestas++; });
         }
         close();
-        toast(`Visita guardada${acciones.length ? ` · ${acciones.length} tareas creadas` : ''}${seguimiento && !v.seguimiento ? ' · seguimiento a 7 días' : ''}${propuestas ? ' · enviada a Aprobaciones para Notion' : ''}`);
+        toast(`Visita guardada${acciones.length ? ` · ${acciones.length} tareas creadas` : ''}${seguimiento && !v.seguimiento ? ' · seguimiento a 7 días' : ''}${propuestas ? (store.getSettings().notionDirecto !== false ? ' · enviando a Notion…' : ' · enviada a Aprobaciones para Notion') : ''}`);
         location.hash = `#/visitas/${rec.id}`;
       });
     },

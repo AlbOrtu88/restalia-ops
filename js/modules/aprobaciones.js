@@ -33,7 +33,16 @@ async function approve(a) {
     confirm: 'Aprobar',
   });
   if (!ok) return;
-  const hist = [...(a.historial || []), histEntry('Aprobada')];
+  await execute(a);
+  store.log(`Alberto aprobó «${a.accion}»`, 'aprobaciones');
+}
+
+/**
+ * Ejecuta una propuesta en el backend. auto=true: alta directa de una visita/incidencia que Alberto acaba de guardar
+ * (ajuste «Enviar mis visitas e incidencias a Notion al guardar»). Si falla, la propuesta queda pendiente para reintentarla.
+ */
+export async function execute(a, { auto = false } = {}) {
+  const hist = [...(a.historial || []), histEntry(auto ? 'Enviada al guardar' : 'Aprobada')];
   a = repairLegacyCreate(a);
   try {
     const r = await request('/approvals/execute', { method: 'POST', body: { id: a.id, sistema: a.sistema, accion: a.accion, datos: a.datos, ref: a.ref || null, op: a.op || null }, system: a.sistema });
@@ -41,8 +50,14 @@ async function approve(a) {
     store.update('aprobaciones', a.id, { estado: 'Ejecutada', historial: [...hist, histEntry('Ejecutada', [r?.ref ? `Ref. ${r.ref}` : '', omitidos].filter(Boolean).join(' · '))], resuelta: new Date().toISOString(), refUrl: r?.url || a.refUrl || null });
     // Alta en Notion: el registro de la app guarda la página creada y se oculta cuando llega en la siguiente sincronización (sin duplicados).
     if (a.op?.type === 'notion.create' && a.ref?.col && a.ref?.id && r?.ref) store.update(a.ref.col, a.ref.id, { notionRef: r.ref, notionUrl: r.url || null });
-    toast(omitidos ? `Ejecutada en ${a.sistema} · ${r.skipped.length} campo(s) sin rellenar` : `Ejecutada en ${a.sistema}`);
+    if (!auto) toast(omitidos ? `Ejecutada en ${a.sistema} · ${r.skipped.length} campo(s) sin rellenar` : `Ejecutada en ${a.sistema}`);
+    return { ok: true, skipped: r?.skipped || [] };
   } catch (e) {
+    if (auto) {
+      // No se pierde nada: queda en Aprobaciones para enviarla a mano cuando haya conexión.
+      store.update('aprobaciones', a.id, { estado: 'Pendiente', historial: [...(a.historial || []), histEntry('No se pudo enviar al guardar', e.message)] });
+      return { ok: false, error: e.message };
+    }
     if (e instanceof NotConnectedError) {
       store.update('aprobaciones', a.id, { estado: 'En cola (sin conexión)', historial: [...hist, histEntry('En cola', e.message)], resuelta: new Date().toISOString() });
       toast('Aprobada · en cola hasta conectar el backend', 'clock');
@@ -50,8 +65,8 @@ async function approve(a) {
       store.update('aprobaciones', a.id, { estado: 'Error', historial: [...hist, histEntry('Error', e.message)] });
       toast(`No se pudo ejecutar: ${e.message}`, 'alert');
     }
+    return { ok: false, error: e.message };
   }
-  store.log(`Alberto aprobó «${a.accion}»`, 'aprobaciones');
 }
 
 function reject(a, done) {

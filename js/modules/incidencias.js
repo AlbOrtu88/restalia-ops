@@ -41,7 +41,7 @@ function openForm(localId = '') {
         store.log(`Se abrió la incidencia ${rec.id} en ${store.localName(v.localId)}`, 'incidencias');
         // Local real de Notion: la incidencia se propone a Notion automáticamente (se crea al aprobarla).
         const prop = store.find('locales', v.localId)?.source?.system === 'notion' ? proposeToNotion('incidencia', rec, incidenciaDatos(rec)) : null;
-        close(); toast(`Incidencia ${rec.id} abierta${prop ? ' · enviada a Aprobaciones para Notion' : ''}`); location.hash = `#/incidencias/${rec.id}`;
+        close(); toast(`Incidencia ${rec.id} abierta${prop ? (store.getSettings().notionDirecto !== false ? ' · enviando a Notion…' : ' · enviada a Aprobaciones para Notion') : ''}`); location.hash = `#/incidencias/${rec.id}`;
       });
     },
   });
