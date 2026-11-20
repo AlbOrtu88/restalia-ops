@@ -17,6 +17,17 @@ export async function ensureGeoTable(env) {
 /** Clave estable de una dirección: si cambia la dirección o el municipio en Notion, se vuelve a geocodificar. */
 export const geoKey = (l) => norm(`${l.direccion || ''}|${l.municipio || l.ciudad || ''}`);
 
+/** Nombre del centro comercial a partir del nombre del local («100M CC LA VAGUADA (MADRID)» → «La Vaguada») o de la dirección. */
+export function centroComercial(l) {
+  const from = (txt) => {
+    const m = String(txt || '').match(/\b(?:CC|C\.C\.|Centro Comercial)\s+([^,(]+)/i);
+    if (!m) return null;
+    const name = m[1].trim();
+    return name ? name.toLowerCase().replace(/(^|\s)\p{L}/gu, (c) => c.toUpperCase()) : null;
+  };
+  return from(l.nombre) || from(l.direccion);
+}
+
 /** Consultas de más a menos precisas. Quita partes como «local 2.08», «planta 1» o «nave 3», que confunden al buscador. */
 export function geoQueries(l) {
   const muni = l.municipio || l.ciudad || '';
@@ -28,6 +39,9 @@ export function geoQueries(l) {
     out.push({ q: withMuni(clean || dir), precision: 'direccion' });
     if (clean && clean !== dir) out.push({ q: withMuni(dir), precision: 'direccion' });
   }
+  // Muchos locales están en centros comerciales: OpenStreetMap los conoce mejor por su nombre que por el número de la calle.
+  const cc = centroComercial(l);
+  if (cc) out.push({ q: muni && !norm(cc).includes(norm(muni)) ? `Centro Comercial ${cc}, ${muni}` : `Centro Comercial ${cc}`, precision: 'direccion' });
   if (muni) out.push({ q: `${muni}, España`, precision: 'municipio' });
   return out;
 }
@@ -60,7 +74,9 @@ export async function geocodeLocales(env, budget, { max = PER_RUN } = {}) {
     const key = geoKey(l);
     if (key === '|') continue;
     const c = await env.DB.prepare('SELECT lat, lng, precision, status, fetched_at FROM geocache WHERE key = ?').bind(key).first();
-    if (c?.status === 'ok') {
+    // Las ubicaciones aproximadas (centro del municipio) se reintentan cada 7 días por si ya hay una consulta mejor.
+    const approxStale = c?.status === 'ok' && c.precision === 'municipio' && Date.now() - Date.parse(c.fetched_at) >= RETRY_FAILED_DAYS * 864e5;
+    if (c?.status === 'ok' && !approxStale) {
       // Ya geocodificado: si el registro no lleva las coordenadas (p. ej. tras una sincronización antigua), se añaden.
       if (l.lat !== c.lat || l.lng !== c.lng) await patchRecord(env, r.ref, l, { lat: c.lat, lng: c.lng, geoPrecision: c.precision });
       continue;
