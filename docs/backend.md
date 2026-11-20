@@ -112,7 +112,7 @@ Con un ordenador con `wrangler` también vale: `cd worker && npx wrangler deploy
 
 ### Mapa de locales (gratis)
 
-- Coordenadas: el backend geocodifica la Dirección (+ Municipio) de cada local con **Nominatim de OpenStreetMap** (gratis, sin clave, máx. 1 consulta/s, User-Agent identificable). Lo hace poco a poco en cada cron (y en «Actualizar ahora»), unos 6 locales por ejecución, y guarda el resultado en la tabla `geocache` de D1. **No escribe nada en Notion.** Si cambia la dirección en Notion, se vuelve a geocodificar. Si una dirección no se encuentra, se usa el centro del municipio (marcado como «aproximada») y se reintenta a los 7 días.
+- Coordenadas: el backend geocodifica la Dirección (+ Municipio) de cada local con **Nominatim de OpenStreetMap** (gratis, sin clave, máx. 1 consulta/s, User-Agent identificable). Lo hace poco a poco en cada cron (y en «Actualizar ahora»), unos 6 locales por ejecución, y guarda el resultado en la tabla `geocache` de D1. **No escribe nada en Notion.** Si cambia la dirección en Notion, se vuelve a geocodificar. Si la dirección no se encuentra y el local está en un centro comercial («CC …» en el nombre o la dirección), se busca el centro comercial por su nombre. Si tampoco aparece, se usa el centro del municipio (marcado como «aproximada») y se reintenta a los 7 días.
 - Mapa: Leaflet 1.9.4 (cdnjs) con teselas de OpenStreetMap, atribución incluida. Comparte filtros con la tabla. `GET /api/geo/status` resume cuántos locales están ubicados.
 - El Worker `restalia-ops-deployer` debe incluir `geo.js` en su lista de archivos.
 
