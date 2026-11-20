@@ -1,6 +1,6 @@
 # Backend de Restalia Operations AI · administración
 
-Versión 0.3 · noviembre de 2026. Código en [`worker/`](../worker). Arquitectura general en [arquitectura.md](arquitectura.md).
+Versión 0.4 · noviembre de 2026. Código en [`worker/`](../worker). Arquitectura general en [arquitectura.md](arquitectura.md).
 
 ## 1. Qué hay desplegado
 
@@ -110,6 +110,12 @@ Con un ordenador con `wrangler` también vale: `cd worker && npx wrangler deploy
 - Mapeo: `responsableAsignado` ← «Responsable asignado», `gerente` ← «Gerente» (nunca se mezclan), `municipio` ← «Municipio», `zona`, `prioridad`, `proximaVisita`, `franquiciado`, `notasGenerales`, `notionEditedAt` (versión de la página). `ciudad` y `responsable` se mantienen como alias por compatibilidad.
 - Desde la app solo se pueden **proponer** cambios de Estado, Próxima visita y Notas generales. Se ejecutan solo al aprobarlos en Aprobaciones y con `NOTION_WRITES_ENABLED="true"`. Antes de escribir, el backend comprueba que la página no haya cambiado en Notion desde la propuesta (si cambió → 409 y no se escribe).
 
+### Mapa de locales (gratis)
+
+- Coordenadas: el backend geocodifica la Dirección (+ Municipio) de cada local con **Nominatim de OpenStreetMap** (gratis, sin clave, máx. 1 consulta/s, User-Agent identificable). Lo hace poco a poco en cada cron (y en «Actualizar ahora»), unos 6 locales por ejecución, y guarda el resultado en la tabla `geocache` de D1. **No escribe nada en Notion.** Si cambia la dirección en Notion, se vuelve a geocodificar. Si una dirección no se encuentra, se usa el centro del municipio (marcado como «aproximada») y se reintenta a los 7 días.
+- Mapa: Leaflet 1.9.4 (cdnjs) con teselas de OpenStreetMap, atribución incluida. Comparte filtros con la tabla. `GET /api/geo/status` resume cuántos locales están ubicados.
+- El Worker `restalia-ops-deployer` debe incluir `geo.js` en su lista de archivos.
+
 ## 8. Pruebas
 
 ```bash
@@ -119,9 +125,9 @@ node test/mock-apis.mjs &                       # Notion, Entra ID y Graph simul
 # .dev.vars con SESSION_SECRET, ACCESS_KEY, MS_*, ALLOWED_EMAIL=test@example.com, NOTION_TOKEN,
 # NOTION_DATA_SOURCES={"locales":"ds-locales","tareas":"ds-tareas","historial":"ds-historial"},
 # NOTION_API_BASE=http://localhost:8790/notion, GRAPH_BASE=http://localhost:8790/graph,
-# MS_LOGIN_BASE=http://localhost:8790/login, NOTION_WRITES_ENABLED=true, FRONTEND_ORIGIN=http://localhost:8000
+# MS_LOGIN_BASE=http://localhost:8790/login, GEOCODER_BASE=http://localhost:8790/geo, NOTION_WRITES_ENABLED=true, FRONTEND_ORIGIN=http://localhost:8000
 npx wrangler dev --env dev --local &
-node test/e2e.mjs                               # 39 comprobaciones (con la base local recién creada)
+node test/e2e.mjs                               # 41 comprobaciones (con la base local recién creada)
 ```
 
 Cubren: login con PKCE y rechazo de otra cuenta, cookie segura, CSRF, bloqueo por intentos, paginación de Notion, deltas de Graph con borrados, idempotencia (una segunda sincronización no reenvía nada), ausencia de duplicados, reconciliación de borrados, escritura en Notion validada contra el esquema, Historial de cambios, cero escrituras en Graph y búsqueda en SharePoint.

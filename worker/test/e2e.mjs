@@ -63,6 +63,8 @@ d = await (await req('/api/data?since=1970-01-01', { cookie })).json();
 const loc = d.records.find((x) => x.collection === 'locales' && !x.deleted)?.data || {};
 ok(loc.responsableAsignado === 'Responsable Ficticio' && loc.responsable === 'Responsable Ficticio' && loc.gerente === 'Gerente Ficticio', 'Locales: «Responsable asignado» separado de «Gerente»');
 ok(loc.municipio === 'Majadahonda' && loc.ciudad === 'Majadahonda' && loc.zona === 'Comunidad de Madrid' && loc.marca === 'Marca Ficticia' && loc.notasGenerales === 'Nota ficticia' && loc.notionEditedAt, 'Locales: Municipio, Zona, Marca, Notas generales y versión de Notion');
+ok(loc.lat === 40.4728 && loc.lng === -3.8722 && loc.geoPrecision === 'direccion', 'Locales: geocodificado con la dirección (Nominatim simulado) sin escribir en Notion');
+j = await (await req('/api/geo/status', { cookie })).json(); ok(j.total === 1 && j.ubicados === 1, 'estado de ubicaciones: 1 de 1');
 j = await (await req('/api/notion/check', { cookie })).json();
 ok(j.ok && j.notion.locales === 1 && j.backend.locales === 1 && j.inSync === true && j.notion.conResponsableAsignado === 1 && j.sample?.zona === 'Comunidad de Madrid', 'comprobación en vivo Notion ↔ backend');
 r = await req('/api/notion/check'); ok(r.status === 401, 'comprobación en vivo sin sesión → 401');

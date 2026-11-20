@@ -23,6 +23,54 @@ export function googleMapsUrl(l) {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
 }
 
+// ---------- Mapa (Leaflet + OpenStreetMap, gratis y sin clave) ----------
+const LEAFLET = { css: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css', js: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js' };
+const BRAND_COLORS = { '100 Montaditos': '#e07a10', 'The Good Burger': '#d6332a', 'Cervecería La Sureña': '#1d5bff', 'Panther Organic Coffee': '#1f9d55', 'Pepe Taco': '#8b3fd9' };
+const brandColor = (m) => BRAND_COLORS[m] || '#6b7280';
+let leafletP = null, mapInst = null;
+function loadLeaflet() {
+  if (window.L) return Promise.resolve(window.L);
+  if (leafletP) return leafletP;
+  leafletP = new Promise((resolve, reject) => {
+    const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = LEAFLET.css; document.head.appendChild(css);
+    const js = document.createElement('script'); js.src = LEAFLET.js; js.async = true;
+    js.onload = () => resolve(window.L); js.onerror = () => { leafletP = null; reject(new Error('No se pudo cargar el mapa')); };
+    document.head.appendChild(js);
+  });
+  return leafletP;
+}
+const hasCoords = (l) => Number.isFinite(l.lat) && Number.isFinite(l.lng);
+
+/** Pinta el mapa con los locales filtrados. Los locales en el mismo punto (p. ej. un centro comercial) se separan un poco. */
+async function renderMap(el, items) {
+  if (mapInst) { mapInst.remove(); mapInst = null; }
+  let L;
+  try { L = await loadLeaflet(); } catch (e) {
+    el.innerHTML = `<div class="notice" style="margin:12px">${icon('alert')}<div><b>No se pudo cargar el mapa.</b> Comprueba la conexión a internet. La tabla y las fichas siguen disponibles.</div></div>`; return;
+  }
+  if (!el.isConnected) return;
+  mapInst = L.map(el, { zoomControl: true, scrollWheelZoom: true, tap: true });
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>' }).addTo(mapInst);
+  const located = items.filter(hasCoords);
+  const groups = new Map();
+  for (const l of located) { const k = `${l.lat.toFixed(4)},${l.lng.toFixed(4)}`; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(l); }
+  const pts = [];
+  for (const g of groups.values()) g.forEach((l, i) => {
+    const a = (2 * Math.PI * i) / g.length, d = g.length > 1 ? 0.00035 : 0;
+    const ll = [l.lat + d * Math.sin(a), l.lng + d * Math.cos(a)];
+    pts.push(ll);
+    const aprox = l.geoPrecision === 'municipio';
+    L.circleMarker(ll, { radius: 9, color: '#ffffff', weight: 2, fillColor: brandColor(l.marca), fillOpacity: aprox ? 0.55 : 0.95, dashArray: aprox ? '3' : null })
+      .bindPopup(`<div class="map-pop"><b>${esc(l.nombre)}</b><div class="small subtle">${[l.marca, muni(l)].filter(Boolean).map(esc).join(' · ')}</div>
+        ${aprox ? '<div class="xs subtle">Ubicación aproximada (municipio)</div>' : ''}
+        <div style="margin-top:6px"><a href="#/locales/${esc(l.id)}">Ver ficha</a> · <a href="${googleMapsUrl(l)}" target="_blank" rel="noopener">Google Maps</a></div></div>`)
+      .addTo(mapInst);
+  });
+  if (pts.length) mapInst.fitBounds(pts, { padding: [28, 28], maxZoom: 15 });
+  else mapInst.setView([40.4168, -3.7038], 9); // Madrid por defecto
+  setTimeout(() => mapInst?.invalidateSize(), 60);
+}
+
 const pendingFor = (l) => store.all('aprobaciones').find((a) => a.estado === 'Pendiente' && a.op?.collection === 'locales' && a.op?.ref === l.source?.ref);
 
 /** Estado de la conexión con datos reales: carga, sin sesión o error, con opción de reintentar. */
@@ -59,7 +107,18 @@ function list(view) {
     view.querySelector('#l-count').textContent = `${items.length} de ${all.length}`;
     view.querySelector('#l-clear').hidden = !anyFilter();
     if (!all.length) { body.innerHTML = `<div class="card">${empty(syncState.busy ? 'Cargando locales…' : 'Todavía no hay locales', 'store')}</div>`; return; }
-    if (!items.length) { body.innerHTML = `<div class="card">${empty('Ningún local coincide con los filtros', 'store')}</div>`; return; }
+    if (st.view !== 'mapa' && mapInst) { mapInst.remove(); mapInst = null; }
+    if (!items.length) { if (mapInst) { mapInst.remove(); mapInst = null; } body.innerHTML = `<div class="card">${empty('Ningún local coincide con los filtros', 'store')}</div>`; return; }
+    if (st.view === 'mapa') {
+      const sin = items.filter((l) => !hasCoords(l));
+      const marcasVis = uniq(items.filter(hasCoords).map((l) => l.marca || 'Sin marca'));
+      body.innerHTML = `<div class="card map-card"><div id="l-map" class="map" role="region" aria-label="Mapa de locales"></div>
+        <div class="map-legend">${marcasVis.map((m) => `<span><i style="background:${brandColor(m)}"></i>${esc(m)} · ${items.filter((l) => hasCoords(l) && (l.marca || 'Sin marca') === m).length}</span>`).join('')}</div></div>
+        ${sin.length ? `<div class="card pad" style="margin-top:12px"><div class="small"><b>${sin.length} ${sin.length === 1 ? 'local sin ubicar' : 'locales sin ubicar'} todavía.</b> <span class="subtle">Se sitúan solos a partir de su dirección en las próximas sincronizaciones.</span></div>
+          <div class="list" style="margin-top:8px">${sin.map((l) => `<div class="li" data-href="#/locales/${l.id}"><span class="li-icon">${icon('pin', 'sm')}</span><div class="li-main"><div class="li-title">${esc(l.nombre)}</div><div class="li-sub">${esc(l.direccion || 'Sin dirección')}</div></div></div>`).join('')}</div></div>` : ''}`;
+      renderMap(body.querySelector('#l-map'), items);
+      return;
+    }
     body.innerHTML = st.view === 'tabla' ? `<div class="card table-wrap"><table class="tbl mobile-list"><thead><tr><th>Local</th>${conCodigo ? '<th>Código</th>' : ''}<th>Marca</th><th>Municipio</th><th>Zona</th><th>Responsable</th><th>Estado</th><th>Incidencias</th><th>Última visita</th><th>Auditoría</th></tr></thead><tbody>
       ${items.map((l) => { const v = lastVisitDate(l), a = lastAudit(l.id), n = openInc(l.id); return `<tr data-href="#/locales/${l.id}">
         <td class="primary">${esc(l.nombre)} ${demoBadge(l)}</td>${conCodigo ? `<td class="mono">${esc(l.codigo || '—')}</td>` : ''}<td>${esc(l.marca || '—')}</td><td>${esc(muni(l) || '—')}</td><td class="hide-m">${esc(l.zona || '—')}</td><td class="hide-m">${esc(resp(l) || '—')}</td>
@@ -75,7 +134,7 @@ function list(view) {
 
   const sel = (id, label, all, cur, opts = []) => `<select class="sel" id="${id}" aria-label="${label}"><option value="">${label}</option>${opts.join('')}${all.map((m) => `<option ${m === cur ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select>`;
   view.innerHTML = `
-    ${pageHead('Locales', 'Cartera de locales desde Notion: ficha operativa, visitas, incidencias, auditorías, acciones y documentos.', seg('lview', [{ value: 'tabla', label: 'Tabla', icon: 'table' }, { value: 'tarjetas', label: 'Tarjetas', icon: 'grid' }], st.view))}
+    ${pageHead('Locales', 'Cartera de locales desde Notion: ficha operativa, visitas, incidencias, auditorías, acciones y documentos.', seg('lview', [{ value: 'tabla', label: 'Tabla', icon: 'table' }, { value: 'tarjetas', label: 'Tarjetas', icon: 'grid' }, { value: 'mapa', label: 'Mapa', icon: 'map' }], st.view))}
     <div id="l-conn">${connectionNotice(all)}</div>
     ${all.some((r) => r.demo) ? demoNotice('<b>Locales ficticios.</b> Los locales reales llegarán desde la base «Locales» de Notion. La app no crea locales para no duplicar el CRM existente.') : ''}
     <div class="toolbar wrap" style="margin-top:14px">
