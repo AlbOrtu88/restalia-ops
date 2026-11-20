@@ -7,7 +7,30 @@ import * as store from './store.js';
 import { request, backendConfigured, backendUrl, NotConnectedError } from '../adapters/backend.js';
 
 const listeners = new Set();
-export const state = { busy: false, error: null, auth: null, lastSync: null };
+export const state = { busy: false, error: null, auth: null, lastSync: null, sourceErrors: [], online: typeof navigator === 'undefined' ? true : navigator.onLine };
+
+const SOURCE_LABEL = (s) => { const [sys, col] = String(s).split(':'); return `${{ notion: 'Notion', graph: 'Microsoft 365', ics: 'Calendario de Outlook' }[sys] || sys}${col && sys === 'notion' ? ` · ${col}` : ''}`; };
+const ago = (iso) => { const m = Math.round((Date.now() - Date.parse(iso)) / 60000); return m < 1 ? 'ahora mismo' : m < 60 ? `hace ${m} min` : m < 1440 ? `hace ${Math.round(m / 60)} h` : `hace ${Math.round(m / 1440)} d`; };
+
+/**
+ * Estado de la conexión en una frase, para la barra superior.
+ * kind: off (sin backend) · offline · auth (sin sesión) · busy · error · warn (alguna fuente falló) · ok
+ */
+export function syncStatus() {
+  if (!backendConfigured()) return { kind: 'off', text: 'Modo local', title: 'La app funciona sin conexión al backend' };
+  const last = store.getSettings().lastSync;
+  if (!state.online) return { kind: 'offline', text: 'Sin conexión', title: `Sin internet. Usando los datos guardados${last ? ` (${ago(last)})` : ''}.` };
+  if (state.busy) return { kind: 'busy', text: 'Sincronizando…', title: 'Descargando cambios de Notion y Microsoft 365' };
+  if (state.auth && !state.auth.authenticated) return { kind: 'auth', text: 'Sin sesión', title: 'Inicia sesión en Configuración para ver los datos reales' };
+  if (state.error) return { kind: 'error', text: 'Error al sincronizar', title: state.error };
+  if (state.sourceErrors.length) return { kind: 'warn', text: last ? ago(last) : 'Con avisos', title: `Actualizado, pero con errores en: ${state.sourceErrors.map((e) => `${SOURCE_LABEL(e.source)} (${e.error})`).join('; ')}` };
+  return last ? { kind: 'ok', text: ago(last), title: `Última sincronización: ${new Date(last).toLocaleString('es-ES')}` } : { kind: 'warn', text: 'Sin sincronizar', title: 'Todavía no se ha descargado nada del backend' };
+}
+if (typeof window !== 'undefined') {
+  const net = () => { state.online = navigator.onLine; emit(); if (state.online) quietPull(); };
+  window.addEventListener('online', net); window.addEventListener('offline', net);
+  setInterval(() => emit(), 60000); // refresca el «hace X min»
+}
 export const onSync = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
 const emit = () => listeners.forEach((fn) => { try { fn(state); } catch {} });
 
@@ -115,6 +138,8 @@ export async function syncNow(source = null) {
   state.busy = true; state.error = null; emit();
   try {
     const run = await request('/sync/run', { method: 'POST', body: source ? { source } : {}, system: 'Sincronización', timeout: 60000 });
+    const errs = Object.entries(run?.results || {}).filter(([, r]) => r?.error).map(([src, r]) => ({ source: src, error: r.error }));
+    state.sourceErrors = source ? [...state.sourceErrors.filter((e) => !errs.some((x) => x.source === e.source) && !String(e.source).startsWith(source)), ...errs] : errs;
     const n = await pull();
     state.lastSync = new Date().toISOString();
     return { run, changes: n };

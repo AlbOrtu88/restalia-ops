@@ -141,16 +141,23 @@ Con un ordenador con `wrangler` también vale: `cd worker && npx wrangler deploy
 
 ## 8. Pruebas
 
+Se ejecutan solas en GitHub (Actions → CI) en cada PR y en cada cambio de `main`, sin secretos ni acceso a Notion, Microsoft 365 o Cloudflare:
+- **Backend (e2e del Worker)**: `worker/test/e2e.mjs` contra APIs simuladas.
+- **App (Playwright)**: `worker/test/app-smoke.cjs` en iPhone 13 (claro y oscuro) y escritorio 1440 px: aviso «Sin sesión», acceso, sincronización, que cada pantalla se pinta, mapa a pantalla completa, alta de visita → propuesta para Notion con el local como relación, sin scroll horizontal y sin errores de consola. Las capturas quedan como artefacto «capturas» de la ejecución (7 días).
+
+En local:
+
 ```bash
 cd worker && npm install
-npx wrangler d1 execute restalia-ops-dev --env dev --local --file schema.sql
-node test/mock-apis.mjs &                       # Notion, Entra ID y Graph simulados (datos ficticios)
-# .dev.vars con SESSION_SECRET, ACCESS_KEY, MS_*, ALLOWED_EMAIL=test@example.com, NOTION_TOKEN,
-# NOTION_DATA_SOURCES={"locales":"ds-locales","tareas":"ds-tareas","historial":"ds-historial"},
-# NOTION_API_BASE=http://localhost:8790/notion, GRAPH_BASE=http://localhost:8790/graph,
-# MS_LOGIN_BASE=http://localhost:8790/login, GEOCODER_BASE=http://localhost:8790/geo, NOTION_WRITES_ENABLED=true, FRONTEND_ORIGIN=http://localhost:8000
-npx wrangler dev --env dev --local &
-node test/e2e.mjs                               # 41 comprobaciones (con la base local recién creada)
+cp test/ci.dev.vars .dev.vars                  # valores ficticios de prueba (no son secretos reales)
+npx wrangler d1 execute DB --env dev --local --file schema.sql
+node test/mock-apis.mjs &                       # Notion, Entra ID, Graph, Nominatim y calendario simulados
+npx wrangler dev --env dev --local --port 8787 &
+node test/e2e.mjs                               # con la base local recién creada
+# App: servir la raíz del repo en :8000 (FRONTEND_ORIGIN) y, con la base local recién creada,
+(cd .. && python3 -m http.server 8000 --bind 127.0.0.1 &) && node test/app-smoke.cjs
 ```
 
-Cubren: login con PKCE y rechazo de otra cuenta, cookie segura, CSRF, bloqueo por intentos, paginación de Notion, deltas de Graph con borrados, idempotencia (una segunda sincronización no reenvía nada), ausencia de duplicados, reconciliación de borrados, escritura en Notion validada contra el esquema, Historial de cambios, cero escrituras en Graph y búsqueda en SharePoint.
+Cada prueba necesita la base local recién creada (`rm -rf .wrangler/state` y volver a aplicar `schema.sql`): la e2e prueba el bloqueo por intentos fallidos y deja la llave bloqueada un rato.
+
+Cubren: login con PKCE y rechazo de otra cuenta, cookie segura, CSRF, bloqueo por intentos, paginación de Notion, deltas de Graph con borrados, idempotencia (una segunda sincronización no reenvía nada), ausencia de duplicados, reconciliación de borrados, escritura y alta en Notion validadas contra el esquema (relación con el local, opciones inexistentes omitidas), Historial de cambios, calendario publicado de Outlook, cero escrituras en Graph y búsqueda en SharePoint.
