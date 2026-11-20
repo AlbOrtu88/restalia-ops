@@ -4,6 +4,7 @@ import * as store from '../core/store.js';
 import { icon, badge, demoBadge, empty, pageHead, seg, bindSeg, demoNotice, openSheet, confirmSheet, toast, on } from '../core/ui.js';
 import { esc, fmtDateTime, relTime, toDate } from '../core/utils.js';
 import { request, backendConfigured, NotConnectedError } from '../adapters/backend.js';
+import { notionFields } from './visitas.js';
 
 const SYS = { Notion: { ic: 'db', c: '' }, Outlook: { ic: 'mail', c: 'blue' }, Teams: { ic: 'teams', c: 'purple' } };
 const COLOR = { 'Pendiente (Notion)': 'amber', 'Aprobado': 'green', 'Rechazado': 'red', 'Pendiente': 'amber', 'En cola (sin conexión)': 'blue', 'Ejecutada': 'green', 'Rechazada': 'red', 'Error': 'red' };
@@ -11,6 +12,17 @@ const st = { tab: 'pendientes' };
 const COL_HREF = { visitas: 'visitas', incidencias: 'incidencias', mensajes: 'comunicaciones', tareas: 'tareas', auditorias: 'auditorias' };
 
 const histEntry = (accion, nota = '') => ({ fecha: new Date().toISOString(), accion, por: store.getSettings().userName || 'Alberto', nota });
+
+// Propuestas «Crear visita/incidencia en Notion» hechas con versiones anteriores de la app (sin operación estructurada):
+// se rehace la operación a partir del registro guardado en este dispositivo, con el local como relación.
+function repairLegacyCreate(a) {
+  if (a.op || a.sistema !== 'Notion' || !['visitas', 'incidencias'].includes(a.ref?.col)) return a;
+  const rec = store.find(a.ref.col, a.ref.id);
+  if (!rec || rec.demo || rec.source?.system === 'notion') return a;
+  const op = { type: 'notion.create', collection: a.ref.col, fields: notionFields(a.ref.col === 'visitas' ? 'visita' : 'incidencia', rec) };
+  store.update('aprobaciones', a.id, { op });
+  return { ...a, op };
+}
 
 async function approve(a) {
   const ok = await confirmSheet({
@@ -21,15 +33,31 @@ async function approve(a) {
     confirm: 'Aprobar',
   });
   if (!ok) return;
-  const hist = [...(a.historial || []), histEntry('Aprobada')];
+  await execute(a);
+  store.log(`Alberto aprobó «${a.accion}»`, 'aprobaciones');
+}
+
+/**
+ * Ejecuta una propuesta en el backend. auto=true: alta directa de una visita/incidencia que Alberto acaba de guardar
+ * (ajuste «Enviar mis visitas e incidencias a Notion al guardar»). Si falla, la propuesta queda pendiente para reintentarla.
+ */
+export async function execute(a, { auto = false } = {}) {
+  const hist = [...(a.historial || []), histEntry(auto ? 'Enviada al guardar' : 'Aprobada')];
+  a = repairLegacyCreate(a);
   try {
     const r = await request('/approvals/execute', { method: 'POST', body: { id: a.id, sistema: a.sistema, accion: a.accion, datos: a.datos, ref: a.ref || null, op: a.op || null }, system: a.sistema });
     const omitidos = r?.skipped?.length ? `Sin rellenar en Notion: ${r.skipped.join(', ')}` : '';
     store.update('aprobaciones', a.id, { estado: 'Ejecutada', historial: [...hist, histEntry('Ejecutada', [r?.ref ? `Ref. ${r.ref}` : '', omitidos].filter(Boolean).join(' · '))], resuelta: new Date().toISOString(), refUrl: r?.url || a.refUrl || null });
     // Alta en Notion: el registro de la app guarda la página creada y se oculta cuando llega en la siguiente sincronización (sin duplicados).
     if (a.op?.type === 'notion.create' && a.ref?.col && a.ref?.id && r?.ref) store.update(a.ref.col, a.ref.id, { notionRef: r.ref, notionUrl: r.url || null });
-    toast(omitidos ? `Ejecutada en ${a.sistema} · ${r.skipped.length} campo(s) sin rellenar` : `Ejecutada en ${a.sistema}`);
+    if (!auto) toast(omitidos ? `Ejecutada en ${a.sistema} · ${r.skipped.length} campo(s) sin rellenar` : `Ejecutada en ${a.sistema}`);
+    return { ok: true, skipped: r?.skipped || [] };
   } catch (e) {
+    if (auto) {
+      // No se pierde nada: queda en Aprobaciones para enviarla a mano cuando haya conexión.
+      store.update('aprobaciones', a.id, { estado: 'Pendiente', historial: [...(a.historial || []), histEntry('No se pudo enviar al guardar', e.message)] });
+      return { ok: false, error: e.message };
+    }
     if (e instanceof NotConnectedError) {
       store.update('aprobaciones', a.id, { estado: 'En cola (sin conexión)', historial: [...hist, histEntry('En cola', e.message)], resuelta: new Date().toISOString() });
       toast('Aprobada · en cola hasta conectar el backend', 'clock');
@@ -37,8 +65,8 @@ async function approve(a) {
       store.update('aprobaciones', a.id, { estado: 'Error', historial: [...hist, histEntry('Error', e.message)] });
       toast(`No se pudo ejecutar: ${e.message}`, 'alert');
     }
+    return { ok: false, error: e.message };
   }
-  store.log(`Alberto aprobó «${a.accion}»`, 'aprobaciones');
 }
 
 function reject(a, done) {
