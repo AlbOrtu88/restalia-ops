@@ -43,6 +43,8 @@ const routes = [
     const slice = all.slice(start, start + size);
     return [200, { object: 'list', results: slice, has_more: start + size < all.length, next_cursor: start + size < all.length ? String(start + size) : null }];
   }],
+  // Nominatim simulado: encuentra direcciones de Majadahonda; el resto, sin resultado.
+  ['GET', /^\/geo\/search$/, (m, b, url) => { const q = new URL(url, B).searchParams.get('q') || ''; return [200, /majadahonda/i.test(q) && !/local/i.test(q) ? [{ lat: '40.4728', lon: '-3.8722', display_name: 'Majadahonda (ficticio)' }] : []]; }],
   ['GET', /^\/notion\/pages\/([^/]+)$/, (m) => { const pg = [...tareas, ...locales].find((t) => t.id === m[1]); return pg ? [200, pg] : [404, { code: 'object_not_found' }]; }],
   ['PATCH', /^\/notion\/pages\/([^/]+)$/, (m, body) => { const pg = [...tareas, ...locales].find((t) => t.id === m[1]); if (!pg) return [404, {}]; const pr = JSON.parse(body).properties; Object.assign(pg.properties, Object.fromEntries(Object.entries(pr).map(([k, v]) => [k, { type: Object.keys(v)[0], ...v }]))); pg.last_edited_time = new Date().toISOString(); return [200, pg]; }],
   ['POST', /^\/notion\/pages$/, (m, body) => [200, { object: 'page', id: 'cccccccc-0000-0000-0000-00000000000' + log.length % 10, url: 'https://www.notion.so/nueva', body: JSON.parse(body) }]],

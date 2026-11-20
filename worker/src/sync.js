@@ -6,6 +6,7 @@ import { now, Budget, HttpError, audit } from './util.js';
 import { NOTION_COLLECTIONS, dataSources, notionConfigured, query, normalize, schema } from './notion.js';
 import { gfetch, mailToRecord, eventToRecord, driveItemToRecord, teamsMessageToRecord } from './graph.js';
 import { vaultGet } from './util.js';
+import { cachedCoords, geocodeLocales } from './geo.js';
 
 const DAY = 864e5;
 export const NOTION_SOURCES = Object.keys(NOTION_COLLECTIONS).map((c) => `notion:${c}`);
@@ -51,6 +52,8 @@ async function syncNotion(env, budget, col, { full }) {
   const res = await query(env, budget, col, { since: isFull ? null : st.last_ok, startCursor: cur.next });
   const app = NOTION_COLLECTIONS[col].app;
   const rows = res.pages.map((p) => ({ system: 'notion', ref: p.id, collection: app, updatedAt: p.last_edited_time, data: normalize(col, p), deleted: !!(p.archived || p.in_trash) }));
+  // Locales: se conservan las coordenadas ya calculadas (no vienen de Notion, sino de la caché de geocodificación).
+  if (col === 'locales') for (const r of rows) { const c = await cachedCoords(env, r.data); if (c) Object.assign(r.data, c); }
   await upsert(env, rows);
   let seen = isFull ? [...(cur.seen || []), ...res.pages.map((p) => p.id)] : [];
   if (!res.done) {
@@ -223,6 +226,11 @@ export async function changes(env, since) {
 export async function cron(env, event) {
   const daily = event.cron === '30 2 * * *';
   const res = await runSync(env, { full: daily, trigger: daily ? 'cron-diario' : 'cron' });
+  // Con el presupuesto que sobra, se ubican en el mapa unos pocos locales más (Nominatim, gratis, 1 consulta/s).
+  if (res.budgetLeft > 6) {
+    try { res.results['geo:locales'] = { items: (await geocodeLocales(env, new Budget(Math.min(14, res.budgetLeft - 2)))).done }; }
+    catch (e) { console.error('geo', e); res.results['geo:locales'] = { error: 'geocodificación' }; }
+  }
   if (daily) await housekeeping(env);
   await audit(env, 'sync.cron', { detail: Object.entries(res.results).map(([k, v]) => `${k}:${v.error ? 'error' : v.items ?? v.skipped}`).join(' ') });
   return res;

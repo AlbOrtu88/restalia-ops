@@ -33,3 +33,6 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 CREATE TABLE IF NOT EXISTS schema_cache (collection TEXT PRIMARY KEY, data TEXT NOT NULL, fetched_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS push_subs (endpoint TEXT PRIMARY KEY, data TEXT NOT NULL, created TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS geocache (
+  key TEXT PRIMARY KEY, query TEXT, lat REAL, lng REAL, precision TEXT, display TEXT, status TEXT NOT NULL, fetched_at TEXT NOT NULL
+);

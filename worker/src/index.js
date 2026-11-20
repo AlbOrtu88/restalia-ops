@@ -9,9 +9,10 @@ import { searchMail, searchFiles } from './graph.js';
 import { runSync, syncStatus, changes, cron, ALL_SOURCES } from './sync.js';
 import { chat, aiProvider } from './ai.js';
 import { execute } from './approvals.js';
+import { geoStatus, geocodeLocales } from './geo.js';
 import { vaultGet } from './util.js';
 
-const VERSION = '0.3.0';
+const VERSION = '0.4.0';
 
 async function loadCollection(env, collection, { limit = 200 } = {}) {
   const { results } = await env.DB.prepare('SELECT system, ref, data, updated_at, synced_at FROM records WHERE collection = ? AND deleted = 0 ORDER BY updated_at DESC LIMIT ?').bind(collection, limit).all();
@@ -56,10 +57,16 @@ async function api(req, env, url) {
     const body = await req.json().catch(() => ({}));
     if (body.source && !ALL_SOURCES.some((s) => s === body.source || s.startsWith(body.source + ':'))) throw new HttpError(400, 'Fuente desconocida');
     const res = await runSync(env, { only: body.source || null, full: !!body.full, trigger: `manual:${session.via}` });
+    // «Actualizar ahora» también ubica en el mapa algunos locales pendientes (si queda presupuesto).
+    if ((!body.source || ['notion', 'notion:locales'].includes(body.source)) && res.budgetLeft > 6) {
+      try { res.results['geo:locales'] = await geocodeLocales(env, new Budget(Math.min(10, res.budgetLeft - 2)), { max: 4 }); }
+      catch (e) { console.error('geo', e); res.results['geo:locales'] = { error: 'geocodificación' }; }
+    }
     return json(res);
   }
 
   // Notion (lectura)
+  if (p === '/geo/status' && m === 'GET') return json(await geoStatus(env));
   if (p === '/notion/check' && m === 'GET') return json(await liveCheck(env, new Budget(6)));
   if (p === '/notion/schema' && m === 'GET') {
     const budget = new Budget(30);
