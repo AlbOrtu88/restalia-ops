@@ -117,7 +117,7 @@ export default {
           <button class="btn danger" data-wipe>${icon('trash', 'sm')}Borrar todo</button>
         </div>`)}
 
-      <p class="xs subtle" style="text-align:center;margin:20px 0 0">Restalia Operations AI · versión 0.2 (backend conectado)</p>`;
+      <p class="xs subtle" style="text-align:center;margin:20px 0 0">Restalia Operations AI · versión 0.6.3 (si ves otra, cierra y vuelve a abrir la app)</p>`;
 
     const $ = (q) => view.querySelector(q);
 
