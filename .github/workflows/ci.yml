@@ -1,0 +1,81 @@
+# Pruebas en cada PR y en main: e2e del backend (Worker) y prueba de humo de la app con Playwright.
+# Todo corre en local contra APIs simuladas (worker/test/mock-apis.mjs): no usa secretos ni toca Notion, Microsoft 365 ni Cloudflare.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  worker-e2e:
+    name: Backend (e2e del Worker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+      - run: npm ci
+      - name: Arrancar APIs simuladas y Worker local
+        run: |
+          cp test/ci.dev.vars .dev.vars
+          node test/mock-apis.mjs > mock.log 2>&1 &
+          npx wrangler dev --env dev --local --port 8787 > wrangler.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://localhost:8787/api/health > /dev/null && break; sleep 1; done
+          npx wrangler d1 execute DB --env dev --local --file schema.sql
+      - run: node test/e2e.mjs
+      - name: Registros si falla
+        if: failure()
+        run: tail -n 80 wrangler.log mock.log
+
+  app-smoke:
+    name: App (Playwright, iPhone y escritorio)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+      - name: Instalar dependencias y Chromium
+        working-directory: worker
+        run: |
+          npm ci
+          npm install --no-save playwright@1.49.1
+          npx playwright install --with-deps chromium
+      - name: Arrancar app, APIs simuladas y Worker local
+        run: |
+          cp worker/test/ci.dev.vars worker/.dev.vars
+          python3 -m http.server 8000 --bind 127.0.0.1 > http.log 2>&1 &
+          (cd worker && node test/mock-apis.mjs > ../mock.log 2>&1 &)
+          (cd worker && npx wrangler dev --env dev --local --port 8787 > ../wrangler.log 2>&1 &)
+          for i in $(seq 1 60); do curl -sf http://localhost:8787/api/health > /dev/null && break; sleep 1; done
+          (cd worker && npx wrangler d1 execute DB --env dev --local --file schema.sql)
+      - name: Prueba de humo
+        working-directory: worker
+        run: mkdir -p ../capturas && node test/app-smoke.cjs ../capturas
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: capturas
+          path: capturas/
+          retention-days: 7
+      - name: Registros si falla
+        if: failure()
+        run: tail -n 80 wrangler.log mock.log
