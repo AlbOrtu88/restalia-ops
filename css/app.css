@@ -453,3 +453,26 @@ select.sel{height:36px;border-radius:9px;border:1px solid var(--border);backgrou
 .map-pop{font:13px/1.4 system-ui,-apple-system,sans-serif;min-width:180px}
 .leaflet-container a{color:var(--accent)}
 @media (max-width:720px){.map{height:calc(100vh - 300px);min-height:340px}}
+
+/* Mapa: herramientas, pantalla completa (iPhone) y estado de sincronización */
+.map-card{position:relative}
+.map-tools{position:absolute;top:10px;right:10px;z-index:500;display:flex;gap:6px}
+.map-tools .btn{box-shadow:var(--shadow-sm,0 1px 3px rgba(0,0,0,.15));background:var(--surface)}
+.map-full{position:fixed;inset:0;z-index:900;border-radius:0;margin:0;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+.map-full .map{height:auto;flex:1;min-height:0}
+.map-full .map-tools{top:calc(10px + env(safe-area-inset-top))}
+body.no-scroll{overflow:hidden}
+@media (max-width:720px){.map-tools .btn span{display:none}.map-tools .btn{width:38px;padding:0;justify-content:center}}
+
+.sync-chip{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border-radius:999px;border:1px solid var(--border);background:var(--surface);color:var(--text-2);font:500 12.5px/1 inherit;cursor:pointer;white-space:nowrap;max-width:44vw}
+.sync-chip span{overflow:hidden;text-overflow:ellipsis}
+.sync-chip i{width:8px;height:8px;border-radius:50%;background:var(--green);flex:none}
+.sync-chip.k-busy i{background:var(--accent);animation:syncpulse 1s ease-in-out infinite}
+.sync-chip.k-warn i{background:var(--amber)}
+.sync-chip.k-error,.sync-chip.k-offline,.sync-chip.k-auth{color:var(--red);border-color:color-mix(in srgb,var(--red) 35%,var(--border))}
+.sync-chip.k-error i,.sync-chip.k-offline i,.sync-chip.k-auth i{background:var(--red)}
+.sync-chip.k-off i{background:var(--border-strong)}
+@keyframes syncpulse{50%{opacity:.35}}
+@media (max-width:720px){.sync-chip.k-ok span,.sync-chip.k-warn span{display:none}.sync-chip.k-ok,.sync-chip.k-warn{padding:0 9px}}
+@media (prefers-reduced-motion:reduce){.sync-chip.k-busy i{animation:none}}
+@media (max-width:720px){.grid.kpi4{grid-template-columns:repeat(2,minmax(0,1fr))}}

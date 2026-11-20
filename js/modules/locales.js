@@ -43,6 +43,33 @@ export const navButtons = (l, cls = 'btn sm') => `<div class="btn-row nav-btns">
   <a class="${cls}" href="${wazeUrl(l)}" target="_blank" rel="noopener">${icon('pin', 'sm')} Ir con Waze</a></div>`;
 
 // ---------- Mapa (Leaflet + OpenStreetMap, gratis y sin clave) ----------
+// Pantalla completa (útil en el iPhone) y «Mi ubicación» (solo en el dispositivo; no se guarda ni se envía a ningún sitio).
+function toggleFull(root, force) {
+  const card = root.querySelector('#l-mapcard');
+  if (!card) return;
+  const on = force ?? !card.classList.contains('map-full');
+  card.classList.toggle('map-full', on);
+  document.body.classList.toggle('no-scroll', on);
+  const b = card.querySelector('[data-mapfull]');
+  if (b) b.innerHTML = `${icon(on ? 'x' : 'expand', 'sm')}<span>${on ? 'Cerrar' : 'Pantalla completa'}</span>`;
+  if (on) { const esc = (e) => { if (e.key === 'Escape') { toggleFull(root, false); document.removeEventListener('keydown', esc); } }; document.addEventListener('keydown', esc); }
+  setTimeout(() => mapInst?.invalidateSize(), 80);
+}
+let meLayer = null;
+window.addEventListener('hashchange', () => document.body.classList.remove('no-scroll'));
+function locateMe(btn) {
+  if (!mapInst || !navigator.geolocation) { toast('Este dispositivo no permite obtener la ubicación', 'alert'); return; }
+  btn.disabled = true;
+  navigator.geolocation.getCurrentPosition((p) => {
+    btn.disabled = false;
+    const ll = [p.coords.latitude, p.coords.longitude];
+    if (meLayer) meLayer.remove();
+    meLayer = window.L.layerGroup([window.L.circle(ll, { radius: Math.min(p.coords.accuracy, 500), color: '#2563eb', weight: 1, fillOpacity: 0.12 }),
+      window.L.circleMarker(ll, { radius: 7, color: '#fff', weight: 2, fillColor: '#2563eb', fillOpacity: 1 }).bindPopup('Estás aquí')]).addTo(mapInst);
+    mapInst.setView(ll, Math.max(mapInst.getZoom(), 13));
+  }, () => { btn.disabled = false; toast('No se pudo obtener tu ubicación. Revisa el permiso de localización.', 'alert'); }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+}
+
 const LEAFLET = { css: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css', js: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js' };
 const BRAND_COLORS = { '100 Montaditos': '#e07a10', 'The Good Burger': '#d6332a', 'Cervecería La Sureña': '#1d5bff', 'Mercado La Sureña': '#0e9aa7', 'Panther Organic Coffee': '#1f9d55', 'Pepe Taco': '#8b3fd9' };
 const brandColor = (m) => BRAND_COLORS[m] || '#6b7280';
@@ -62,7 +89,7 @@ const hasCoords = (l) => Number.isFinite(l.lat) && Number.isFinite(l.lng);
 
 /** Pinta el mapa con los locales filtrados. Los locales en el mismo punto (p. ej. un centro comercial) se separan un poco. */
 async function renderMap(el, items) {
-  if (mapInst) { mapInst.remove(); mapInst = null; }
+  if (mapInst) { mapInst.remove(); mapInst = null; meLayer = null; }
   let L;
   try { L = await loadLeaflet(); } catch (e) {
     el.innerHTML = `<div class="notice" style="margin:12px">${icon('alert')}<div><b>No se pudo cargar el mapa.</b> Comprueba la conexión a internet. La tabla y las fichas siguen disponibles.</div></div>`; return;
@@ -129,13 +156,21 @@ function list(view) {
     if (st.view !== 'mapa' && mapInst) { mapInst.remove(); mapInst = null; }
     if (!items.length) { if (mapInst) { mapInst.remove(); mapInst = null; } body.innerHTML = `<div class="card">${empty('Ningún local coincide con los filtros', 'store')}</div>`; return; }
     if (st.view === 'mapa') {
+      const wasFull = !!body.querySelector('#l-mapcard.map-full');
       const sin = items.filter((l) => !hasCoords(l));
       const marcasVis = uniq(items.filter(hasCoords).map((l) => l.marca || 'Sin marca'));
-      body.innerHTML = `<div class="card map-card"><div id="l-map" class="map" role="region" aria-label="Mapa de locales"></div>
+      body.innerHTML = `<div class="card map-card" id="l-mapcard"><div id="l-map" class="map" role="region" aria-label="Mapa de locales"></div>
+        <div class="map-tools"><button class="btn sm" data-mapfull aria-label="Mapa a pantalla completa">${icon('expand', 'sm')}<span>Pantalla completa</span></button><button class="btn sm" data-locate aria-label="Mi ubicación">${icon('target', 'sm')}<span>Mi ubicación</span></button></div>
         <div class="map-legend">${marcasVis.map((m) => `<span><i style="background:${brandColor(m)}"></i>${esc(m)} · ${items.filter((l) => hasCoords(l) && (l.marca || 'Sin marca') === m).length}</span>`).join('')}</div></div>
         ${sin.length ? `<div class="card pad" style="margin-top:12px"><div class="small"><b>${sin.length} ${sin.length === 1 ? 'local sin ubicar' : 'locales sin ubicar'} todavía.</b> <span class="subtle">Se sitúan solos a partir de su dirección en las próximas sincronizaciones.</span></div>
           <div class="list" style="margin-top:8px">${sin.map((l) => `<div class="li" data-href="#/locales/${l.id}"><span class="li-icon">${icon('pin', 'sm')}</span><div class="li-main"><div class="li-title">${esc(l.nombre)}</div><div class="li-sub">${esc(l.direccion || 'Sin dirección')}</div></div></div>`).join('')}</div></div>` : ''}`;
       renderMap(body.querySelector('#l-map'), items);
+      if (wasFull) toggleFull(body, true);
+      if (!body._mt) {
+        body._mt = 1;
+        on(body, 'click', '[data-mapfull]', () => toggleFull(body));
+        on(body, 'click', '[data-locate]', (e, b) => locateMe(b));
+      }
       return;
     }
     body.innerHTML = st.view === 'tabla' ? `<div class="card table-wrap"><table class="tbl mobile-list"><thead><tr><th>Local</th>${conCodigo ? '<th>Código</th>' : ''}<th>Marca</th><th>Municipio</th><th>Zona</th><th>Responsable</th><th>Estado</th><th>Incidencias</th><th>Última visita</th><th>Auditoría</th></tr></thead><tbody>

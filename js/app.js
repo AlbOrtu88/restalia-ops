@@ -2,7 +2,7 @@
 import * as store from './core/store.js';
 import { icon, openSheet, toast, on, closeAllSheets } from './core/ui.js';
 import { t, setLang } from './core/i18n.js';
-import { isOverdue, relTime } from './core/utils.js';
+import { isOverdue, relTime, esc } from './core/utils.js';
 import * as sync from './core/sync.js';
 import { backendConfigured } from './adapters/backend.js';
 
@@ -74,6 +74,7 @@ function renderTopbar(m) {
   $('#topbar').innerHTML = `
     <div class="crumb"><span class="d-only">${icon(m.icon, 'sm')}</span><b>${navLabel(m)}</b></div>
     <div class="spacer"></div>
+    ${backendConfigured() ? (() => { const st = sync.syncStatus(); return `<button class="sync-chip k-${st.kind}" data-syncchip title="${esc(st.title)}" aria-label="Estado de la sincronización: ${esc(st.text)}. ${esc(st.title)}"><i></i><span>${esc(st.text)}</span></button>`; })() : ''}
     ${backendConfigured() ? `<button class="btn ghost icon" data-synctop aria-label="Actualizar ahora" title="${sync.state.busy ? 'Actualizando…' : `Actualizar ahora${store.getSettings().lastSync ? ' · última: ' + relTime(store.getSettings().lastSync) : ''}${sync.state.error ? ' · ' + sync.state.error : ''}`}" ${sync.state.busy ? 'disabled' : ''} style="${sync.state.error ? 'color:var(--red)' : ''}">${icon('refresh')}</button>` : ''}
     <button class="btn ghost icon" data-nav="aprobaciones" aria-label="Aprobaciones pendientes" style="position:relative">${icon('bell')}${n ? `<span style="position:absolute;top:6px;right:6px;width:8px;height:8px;border-radius:50%;background:var(--red)"></span>` : ''}</button>
     <button class="btn primary sm m-only" data-quick aria-label="Registrar">${icon('plus', 'sm')}</button>`;
@@ -142,6 +143,11 @@ function bindShell() {
   on(app, 'click', '[data-nav]', (e, el) => { location.hash = `#/${el.dataset.nav}`; });
   on(app, 'click', '[data-more]', openMore);
   on(app, 'click', '[data-quick]', openQuick);
+  on(app, 'click', '[data-syncchip]', () => {
+    const st = sync.syncStatus();
+    if (st.kind === 'auth') { location.hash = '#/configuracion'; return; }
+    toast(st.title, { ok: 'check', busy: 'refresh', offline: 'wifi', error: 'alert', warn: 'alert' }[st.kind] || 'info');
+  });
   on(app, 'click', '[data-synctop]', async () => {
     if (!sync.state.auth?.authenticated) { location.hash = '#/configuracion'; toast('Inicia sesión para sincronizar', 'lock'); return; }
     try { const r = await sync.syncNow(); toast(`Actualizado · ${r?.changes || 0} cambios`, 'check'); } catch (e) { toast(e.message, 'alert'); }
