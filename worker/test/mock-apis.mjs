@@ -10,7 +10,10 @@ const rt = (s) => [{ plain_text: s }];
 const page = (id, props, extra = {}) => ({ object: 'page', id, url: `https://www.notion.so/${id.replace(/-/g, '')}`, created_time: iso(-10), last_edited_time: iso(-1), archived: false, properties: props, ...extra });
 
 const SCHEMAS = {
-  'ds-locales': { 'Nombre': { type: 'title', title: {} }, 'Dirección': { type: 'rich_text' }, 'Estado': { type: 'select', select: { options: [{ name: 'Activo' }, { name: 'En seguimiento' }] } }, 'Fecha última visita': { type: 'date' }, 'Formato': { type: 'select', select: { options: [] } } },
+  // Copia del esquema real de «Locales» (20-nov-2026), con datos ficticios.
+  'ds-locales': { 'Local': { type: 'title', title: {} }, 'Dirección': { type: 'rich_text' }, 'Estado': { type: 'select', select: { options: [{ name: 'Pendiente de asignación' }, { name: 'Activo' }, { name: 'En seguimiento' }, { name: 'Inactivo' }] } }, 'Fecha última visita': { type: 'date' }, 'Formato': { type: 'select', select: { options: [{ name: 'Calle' }, { name: 'Centro comercial' }, { name: 'Otro' }] } },
+    'Marca': { type: 'select', select: { options: [{ name: 'Marca Ficticia' }] } }, 'Municipio': { type: 'rich_text' }, 'Zona': { type: 'rich_text' }, 'Gerente': { type: 'rich_text' }, 'Responsable asignado': { type: 'rich_text' },
+    'Franquiciado / titular': { type: 'rich_text' }, 'Prioridad': { type: 'select', select: { options: [{ name: 'Alta' }, { name: 'Media' }, { name: 'Baja' }] } }, 'Próxima visita': { type: 'date' }, 'Notas generales': { type: 'rich_text' } },
   'ds-tareas': { 'Acción': { type: 'title', title: {} }, 'Estado': { type: 'status', status: { options: [{ name: 'Pendiente' }, { name: 'En curso' }, { name: 'Bloqueada' }, { name: 'Hecha' }, { name: 'Cancelada' }], groups: [] } }, 'Fecha compromiso': { type: 'date' }, 'Local': { type: 'rich_text' }, 'Notas': { type: 'rich_text' }, 'Origen': { type: 'select', select: { options: [{ name: 'Visita' }] } }, 'Evidencia de cierre': { type: 'rich_text' } },
   'ds-historial': { 'Cambio': { type: 'title', title: {} }, 'Fecha': { type: 'date' }, 'Registro afectado': { type: 'rich_text' }, 'Campo modificado': { type: 'rich_text' }, 'Aprobación vinculada': { type: 'rich_text' } },
 };
@@ -18,7 +21,9 @@ let tareas = [
   page('aaaaaaaa-0000-0000-0000-000000000001', { 'Acción': { type: 'title', title: rt('Revisar cámara FICTICIA') }, 'Estado': { type: 'status', status: { name: 'Pendiente' } }, 'Fecha compromiso': { type: 'date', date: { start: iso(2).slice(0, 10) } }, 'Local': { type: 'rich_text', rich_text: rt('Local Prueba 1') }, 'Notas': { type: 'rich_text', rich_text: rt('nota') }, 'Origen': { type: 'select', select: { name: 'Visita' } }, 'Evidencia de cierre': { type: 'rich_text', rich_text: [] } }),
   page('aaaaaaaa-0000-0000-0000-000000000002', { 'Acción': { type: 'title', title: rt('Tarea dos FICTICIA') }, 'Estado': { type: 'status', status: { name: 'Hecha' } }, 'Fecha compromiso': { type: 'date', date: null }, 'Local': { type: 'rich_text', rich_text: [] }, 'Notas': { type: 'rich_text', rich_text: [] }, 'Origen': { type: 'select', select: null }, 'Evidencia de cierre': { type: 'rich_text', rich_text: [] } }),
 ];
-const locales = [page('bbbbbbbb-0000-0000-0000-000000000001', { 'Nombre': { type: 'title', title: rt('Local Prueba 1') }, 'Dirección': { type: 'rich_text', rich_text: rt('Calle Falsa 1') }, 'Estado': { type: 'select', select: { name: 'Activo' } }, 'Fecha última visita': { type: 'date', date: { start: iso(-5).slice(0, 10) } }, 'Formato': { type: 'select', select: null } })];
+const locales = [page('bbbbbbbb-0000-0000-0000-000000000001', { 'Local': { type: 'title', title: rt('Local Prueba 1') }, 'Dirección': { type: 'rich_text', rich_text: rt('Calle Falsa 1, 28222 Majadahonda') }, 'Estado': { type: 'select', select: { name: 'Activo' } }, 'Fecha última visita': { type: 'date', date: { start: iso(-5).slice(0, 10) } }, 'Formato': { type: 'select', select: { name: 'Centro comercial' } },
+  'Marca': { type: 'select', select: { name: 'Marca Ficticia' } }, 'Municipio': { type: 'rich_text', rich_text: rt('Majadahonda') }, 'Zona': { type: 'rich_text', rich_text: rt('Comunidad de Madrid') }, 'Gerente': { type: 'rich_text', rich_text: rt('Gerente Ficticio') },
+  'Responsable asignado': { type: 'rich_text', rich_text: rt('Responsable Ficticio') }, 'Franquiciado / titular': { type: 'rich_text', rich_text: [] }, 'Prioridad': { type: 'select', select: null }, 'Próxima visita': { type: 'date', date: null }, 'Notas generales': { type: 'rich_text', rich_text: rt('Nota ficticia') } })];
 const pagesOf = { 'ds-locales': () => locales, 'ds-tareas': () => tareas, 'ds-historial': () => [] };
 
 function jwt(payload) { const b = (o) => Buffer.from(JSON.stringify(o)).toString('base64url'); return `${b({ alg: 'none' })}.${b(payload)}.x`; }
@@ -38,7 +43,8 @@ const routes = [
     const slice = all.slice(start, start + size);
     return [200, { object: 'list', results: slice, has_more: start + size < all.length, next_cursor: start + size < all.length ? String(start + size) : null }];
   }],
-  ['PATCH', /^\/notion\/pages\/([^/]+)$/, (m, body) => { const pg = tareas.find((t) => t.id === m[1]); if (!pg) return [404, {}]; const pr = JSON.parse(body).properties; Object.assign(pg.properties, Object.fromEntries(Object.entries(pr).map(([k, v]) => [k, { type: Object.keys(v)[0], ...v }]))); pg.last_edited_time = new Date().toISOString(); return [200, pg]; }],
+  ['GET', /^\/notion\/pages\/([^/]+)$/, (m) => { const pg = [...tareas, ...locales].find((t) => t.id === m[1]); return pg ? [200, pg] : [404, { code: 'object_not_found' }]; }],
+  ['PATCH', /^\/notion\/pages\/([^/]+)$/, (m, body) => { const pg = [...tareas, ...locales].find((t) => t.id === m[1]); if (!pg) return [404, {}]; const pr = JSON.parse(body).properties; Object.assign(pg.properties, Object.fromEntries(Object.entries(pr).map(([k, v]) => [k, { type: Object.keys(v)[0], ...v }]))); pg.last_edited_time = new Date().toISOString(); return [200, pg]; }],
   ['POST', /^\/notion\/pages$/, (m, body) => [200, { object: 'page', id: 'cccccccc-0000-0000-0000-00000000000' + log.length % 10, url: 'https://www.notion.so/nueva', body: JSON.parse(body) }]],
   ['GET', /^\/graph\/me\/calendarView\/delta/, (m, b, url) => url.includes('page=2')
     ? [200, { value: [{ id: 'ev2', '@removed': { reason: 'deleted' } }], '@odata.deltaLink': `${B}/graph/me/calendarView/delta?token=d1` }]

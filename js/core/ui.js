@@ -76,6 +76,7 @@ const STATUS_COLOR = {
   'Crítica': 'red', 'Alta': 'amber', 'Media': 'blue', 'Baja': '',
   // locales
   'Abierto': 'green', 'En obras': 'amber', 'Temporalmente cerrado': 'red', 'Próxima apertura': 'blue',
+  'Activo': 'green', 'En seguimiento': 'amber', 'Inactivo': '', 'Pendiente de asignación': 'purple',
   // proyectos
   'Planificado': 'purple', 'En pausa': 'amber', 'Completado': 'green',
   // auditorías / eventos

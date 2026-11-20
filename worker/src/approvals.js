@@ -6,7 +6,7 @@
 import { HttpError, Budget, audit, now } from './util.js';
 import { updatePage, createPage, NOTION_COLLECTIONS, dataSources } from './notion.js';
 
-const APP_TO_NOTION = { tareas: 'tareas', incidencias: 'incidencias', visitas: 'visitas' };
+const APP_TO_NOTION = { tareas: 'tareas', incidencias: 'incidencias', visitas: 'visitas', locales: 'locales' };
 
 export async function execute(env, body, session) {
   const op = body?.op;
@@ -24,7 +24,9 @@ export async function execute(env, body, session) {
   let result;
   if (op.type === 'notion.update') {
     if (!/^[0-9a-f-]{32,36}$/i.test(op.ref || '')) throw new HttpError(422, 'Referencia de Notion no válida');
-    result = await updatePage(env, budget, col, op.ref, op.changes || {});
+    // En Locales el control de conflictos es obligatorio: la base es la referencia de toda la cartera.
+    if (col === 'locales' && !op.baseEditedAt) throw new HttpError(422, 'Falta la versión del local (baseEditedAt); sincroniza y vuelve a proponer el cambio.');
+    result = await updatePage(env, budget, col, op.ref, op.changes || {}, { expectedEditedAt: op.baseEditedAt || null });
   } else if (op.type === 'notion.create') {
     if (col !== 'tareas') throw new HttpError(422, 'Desde la app solo se pueden crear acciones/tareas en Notion');
     result = await createPage(env, budget, col, op.fields || {});
