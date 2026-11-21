@@ -71,7 +71,7 @@ function locateMe(btn) {
 }
 
 const LEAFLET = { css: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css', js: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js' };
-const BRAND_COLORS = { '100 Montaditos': '#e07a10', 'The Good Burger': '#d6332a', 'Cervecería La Sureña': '#1d5bff', 'Mercado La Sureña': '#0e9aa7', 'Panther Organic Coffee': '#1f9d55', 'Pepe Taco': '#8b3fd9' };
+const BRAND_COLORS = { '100 Montaditos': '#111111', 'The Good Burger': '#1e8f3e', 'Cervecería La Sureña': '#1d5bff', 'Mercado La Sureña': '#0e9aa7', 'Panther Organic Coffee': '#8a5a2b', 'Pepe Taco': '#8b3fd9' };
 const brandColor = (m) => BRAND_COLORS[m] || '#6b7280';
 let leafletP = null, mapInst = null;
 function loadLeaflet() {
