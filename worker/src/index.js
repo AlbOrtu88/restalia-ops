@@ -11,8 +11,9 @@ import { chat, aiProvider } from './ai.js';
 import { execute } from './approvals.js';
 import { geoStatus, geocodeLocales } from './geo.js';
 import { vaultGet } from './util.js';
+import * as factorial from './factorial.js';
 
-const VERSION = '0.6.0';
+const VERSION = '0.7.0';
 
 async function loadCollection(env, collection, { limit = 200 } = {}) {
   const { results } = await env.DB.prepare('SELECT system, ref, data, updated_at, synced_at FROM records WHERE collection = ? AND deleted = 0 ORDER BY updated_at DESC LIMIT ?').bind(collection, limit).all();
@@ -38,6 +39,7 @@ async function api(req, env, url) {
       ok: true, version: VERSION, env: env.ENVIRONMENT, time: now(),
       notion: notionConfigured(env) && okFor('notion:'), graph: !!ms && okFor('graph:'), ai: !!aiProvider(env), storage: true, push: false,
       calendar: !!env.OUTLOOK_ICS_URL && okFor('ics:'),
+      factorial: !!(await vaultGet(env, 'factorial').catch(() => null)),
       configured: { notion: notionConfigured(env), entra: auth.entraConfigured(env), teams: !!env.TEAMS_TEAM_ID, outlookIcs: !!env.OUTLOOK_ICS_URL, notionWrites: env.NOTION_WRITES_ENABLED === 'true' },
     });
   }
@@ -97,6 +99,14 @@ async function api(req, env, url) {
     if (q.get('q')) return json({ items: await searchFiles(env, new Budget(5), q.get('q')), live: true });
     return json({ items: await loadCollection(env, 'documentos', { limit: 1000 }) });
   }
+
+  // Factorial (servidor MCP oficial, con el login de Alberto). Las acciones que cambian algo piden confirm:true.
+  if (p === '/factorial/status' && m === 'GET') return factorial.status(env);
+  if (p === '/factorial/connect' && m === 'GET') return factorial.connect(env, url);
+  if (p === '/factorial/callback' && m === 'GET') return factorial.callback(env, url, session);
+  if (p === '/factorial/tools' && m === 'GET') return factorial.tools(env, url);
+  if (p === '/factorial/call' && m === 'POST') return factorial.call(env, await req.json().catch(() => ({})), session);
+  if (p === '/factorial/disconnect' && m === 'POST') return factorial.disconnect(env, session);
 
   if (p === '/approvals/execute' && m === 'POST') return json(await execute(env, await req.json(), session));
   if (p === '/ai/chat' && m === 'POST') return json(await chat(env, await req.json(), session));
