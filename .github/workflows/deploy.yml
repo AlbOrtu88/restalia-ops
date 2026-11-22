@@ -37,6 +37,8 @@ jobs:
         run: npx wrangler deploy --env prod
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # ID de la cuenta de Cloudflare (no es secreto). Necesario porque el token no puede listar cuentas.
+          CLOUDFLARE_ACCOUNT_ID: 0d4e23ec3feede762e7b6d1061331b4a
       - name: Comprobar que responde la versión nueva
         run: |
           want=$(grep -o "VERSION = '[0-9.]*'" src/index.js | grep -o "[0-9.]*")

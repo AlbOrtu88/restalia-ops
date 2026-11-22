@@ -22,7 +22,6 @@ crons = ["*/15 * * * *", "30 2 * * *"]
 
 [env.dev]
 name = "restalia-ops-dev"
-keep_vars = true
 vars = { ENVIRONMENT = "dev", FRONTEND_ORIGIN = "https://albortu88.github.io/restalia-ops", NOTION_VERSION = "2025-09-03", TIMEZONE = "Europe/Madrid" }
 ai = { binding = "AI" }
 triggers = { crons = ["*/30 * * * *"] }
@@ -30,7 +29,6 @@ d1_databases = [{ binding = "DB", database_name = "restalia-ops-dev", database_i
 
 [env.prod]
 name = "restalia-ops"
-keep_vars = true
 vars = { ENVIRONMENT = "prod", FRONTEND_ORIGIN = "https://albortu88.github.io/restalia-ops", NOTION_VERSION = "2025-09-03", TIMEZONE = "Europe/Madrid" }
 ai = { binding = "AI" }
 triggers = { crons = ["*/15 * * * *", "30 2 * * *"] }
