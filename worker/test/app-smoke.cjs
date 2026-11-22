@@ -5,7 +5,7 @@
 const { chromium, devices } = require('playwright');
 const OUT = process.argv[2] || null;
 const B = 'http://localhost:8787';
-const ROUTES = ['inicio', 'locales', 'visitas', 'incidencias', 'aprobaciones', 'agenda', 'tareas', 'configuracion'];
+const ROUTES = ['inicio', 'locales', 'visitas', 'incidencias', 'aprobaciones', 'agenda', 'tareas', 'factorial', 'configuracion'];
 let fails = 0;
 const ok = (cond, msg) => { console.log(`${cond ? '✓' : '✗'} ${msg}`); if (!cond) fails++; };
 

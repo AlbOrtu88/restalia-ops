@@ -1,4 +1,4 @@
-// Servidor simulado de Notion, Microsoft Entra ID y Microsoft Graph para pruebas locales (datos ficticios).
+// Servidor simulado de Notion, Microsoft Entra ID, Microsoft Graph y Factorial (MCP) para pruebas locales (datos ficticios).
 // node test/mock-apis.mjs  → http://localhost:8790
 import http from 'node:http';
 
@@ -38,7 +38,47 @@ export const lastCreated = [];
 
 function jwt(payload) { const b = (o) => Buffer.from(JSON.stringify(o)).toString('base64url'); return `${b({ alg: 'none' })}.${b(payload)}.x`; }
 
+// Factorial: metadatos OAuth, registro dinámico de clientes, token y servidor MCP (JSON-RPC, respuestas JSON y SSE).
+export const factorialCalls = [];
+let fClients = 0;
+const F_TOOLS = [
+  { name: 'clock_in', description: 'Ficha la entrada del empleado', inputSchema: { type: 'object', properties: {} } },
+  { name: 'get_clock_status', description: 'Estado del fichaje', annotations: { readOnlyHint: true }, inputSchema: { type: 'object', properties: {} } },
+  { name: 'list_leaves', description: 'Ausencias del empleado', inputSchema: { type: 'object', properties: {} } },
+  { name: 'request_time_off', description: 'Pide vacaciones', inputSchema: { type: 'object', required: ['start_on', 'finish_on'], properties: { start_on: { type: 'string', format: 'date' }, finish_on: { type: 'string', format: 'date' } } } },
+];
+function factorialMcp(req, res, body) {
+  const auth = req.headers.authorization || '';
+  if (!/^Bearer FAT-/.test(auth)) { res.writeHead(401, { 'WWW-Authenticate': 'Bearer' }); res.end(); return; }
+  const msg = JSON.parse(body || '{}');
+  if (msg.method === 'initialize') { res.writeHead(200, { 'Content-Type': 'application/json', 'Mcp-Session-Id': 'ses-1' }); res.end(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'factorial-mock', version: '1' } } })); return; }
+  if (req.headers['mcp-session-id'] !== 'ses-1') { res.writeHead(400); res.end('sin sesión'); return; }
+  if (!msg.id) { res.writeHead(202); res.end(); return; }
+  let result;
+  if (msg.method === 'tools/list') result = { tools: F_TOOLS };
+  else if (msg.method === 'tools/call') {
+    factorialCalls.push(msg.params);
+    const n = msg.params.name;
+    result = n === 'get_clock_status' ? { content: [{ type: 'text', text: JSON.stringify({ clocked_in: false }) }] }
+      : n === 'list_leaves' ? { content: [{ type: 'text', text: JSON.stringify([{ type: 'Vacaciones', start_on: '2026-12-22', finish_on: '2026-12-26' }]) }] }
+      : n === 'clock_in' ? { content: [{ type: 'text', text: 'Entrada fichada a las 09:00' }] }
+      : { content: [{ type: 'text', text: 'Solicitud enviada' }] };
+  }
+  // tools/call responde en SSE (como hace un servidor Streamable HTTP real); el resto en JSON.
+  if (msg.method === 'tools/call') { res.writeHead(200, { 'Content-Type': 'text/event-stream' }); res.end(`event: message\ndata: ${JSON.stringify({ jsonrpc: '2.0', id: msg.id, result })}\n\n`); return; }
+  res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result }));
+}
+
 const routes = [
+  ['GET', /^\/factorial-mcp\/\.well-known\/oauth-authorization-server$/, () => [200, { issuer: `${B}/factorial-mcp/`, authorization_endpoint: `${B}/factorial-api/oauth/authorize`, token_endpoint: `${B}/factorial-api/oauth/token`, registration_endpoint: `${B}/factorial-mcp/oauth/register`, code_challenge_methods_supported: ['S256'] }]],
+  ['POST', /^\/factorial-mcp\/oauth\/register$/, (m, body) => { const d = JSON.parse(body || '{}'); if (!d.redirect_uris?.[0]?.endsWith('/api/factorial/callback')) return [400, { error: 'invalid_redirect_uri' }]; fClients++; return [201, { client_id: 'fc-' + fClients, client_secret: 'fs-secreto', redirect_uris: d.redirect_uris }]; }],
+  ['GET', /^\/factorial-api\/oauth\/authorize$/, () => [200, {}]],
+  ['POST', /^\/factorial-api\/oauth\/token$/, (m, body) => {
+    const p = new URLSearchParams(body);
+    if (!p.get('client_id')?.startsWith('fc-') || p.get('client_secret') !== 'fs-secreto' || !p.get('resource')?.includes('/factorial-mcp/')) return [401, { error: 'invalid_client' }];
+    if (p.get('grant_type') === 'authorization_code' && (!p.get('code_verifier') || !p.get('redirect_uri'))) return [400, { error: 'invalid_request' }];
+    return [200, { access_token: 'FAT-' + Date.now(), refresh_token: 'FRT', expires_in: 3600, scope: 'time_tracking time_off' }];
+  }],
   ['GET', /^\/login\/([^/]+)\/oauth2\/v2\.0\/authorize$/, () => [200, {}]],
   ['POST', /^\/__del$/, () => { tareas = tareas.slice(0, 1); return [200, {}]; }],
   ['POST', /^\/login\/([^/]+)\/oauth2\/v2\.0\/token$/, (m, body) => {
@@ -89,6 +129,8 @@ http.createServer((req, res) => {
     if (req.url === '/ics/calendar.ics') { res.writeHead(200, { 'Content-Type': 'text/calendar' }); res.end(icsText()); return; }
     if (req.url === '/__ics-cancel') { icsCancel = true; res.end('ok'); return; }
     const path = req.url.split('?')[0];
+    if (req.url === '/__factorial') { res.end(JSON.stringify(factorialCalls)); return; }
+    if (path === '/factorial-mcp/' && req.method === 'POST') { factorialMcp(req, res, body); return; }
     if (/^\/graph\//.test(path) && req.method !== 'GET' && path !== '/graph/search/query') { res.writeHead(500); res.end('ESCRITURA EN GRAPH DETECTADA'); return; }
     for (const [m, re, fn] of routes) {
       const mm = req.method === m && path.match(re);

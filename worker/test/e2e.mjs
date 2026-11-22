@@ -115,6 +115,32 @@ const st = j.collections.find((c) => c.collection === 'tareas');
 ok(st.mapping.estado?.property === 'Estado' && st.properties['Estado'].options.includes('Cancelada') && st.missing.includes('responsable'), 'informe de esquema: mapeo real y campos ausentes');
 j = await (await req('/api/sync/status', { cookie })).json(); ok(j.log.length > 0 && j.counts.length > 0, 'estado de sincronización con registro');
 
+// 6b. Factorial (MCP oficial con el login del usuario): registro dinámico, OAuth con PKCE y acciones con confirmación
+j = await (await req('/api/factorial/status', { cookie })).json(); ok(j.connected === false, 'Factorial: sin conectar al principio');
+r = await req('/api/factorial/tools', { cookie }); ok(r.status === 409, 'Factorial: acciones sin conexión → 409');
+r = await req('/api/factorial/connect', { cookie });
+let loc2 = new URL(r.headers.get('location') || 'http://x/');
+ok(r.status === 302 && loc2.pathname === '/factorial-api/oauth/authorize' && loc2.searchParams.get('client_id') === 'fc-1' && loc2.searchParams.get('code_challenge_method') === 'S256' && loc2.searchParams.get('resource')?.endsWith('/factorial-mcp/') && loc2.searchParams.get('redirect_uri').endsWith('/api/factorial/callback'), 'Factorial: app registrada sola y redirige al login con PKCE y resource');
+r = await req('/api/factorial/connect', { cookie }); loc2 = new URL(r.headers.get('location'));
+ok(loc2.searchParams.get('client_id') === 'fc-1', 'Factorial: reutiliza el cliente registrado');
+r = await req(`/api/factorial/callback?code=abc&state=${loc2.searchParams.get('state')}`, { cookie });
+ok(r.status === 302 && /#\/factorial\?fc=ok/.test(r.headers.get('location')), 'Factorial: callback guarda los tokens y vuelve a la app');
+r = await req(`/api/factorial/callback?code=abc&state=${loc2.searchParams.get('state')}`, { cookie }); ok(r.status === 400, 'Factorial: state reutilizado → 400');
+j = await (await req('/api/factorial/status', { cookie })).json(); ok(j.connected === true, 'Factorial: conectado');
+j = await (await req('/api/factorial/tools', { cookie })).json();
+ok(j.tools.length === 4 && j.tools.find((t) => t.name === 'get_clock_status').readOnly && !j.tools.find((t) => t.name === 'clock_in').readOnly && j.tools.find((t) => t.name === 'list_leaves').readOnly, 'Factorial: lista de acciones con lectura/escritura');
+j = await (await req('/api/factorial/call', { method: 'POST', cookie, body: { name: 'get_clock_status', arguments: {} } })).json();
+ok(j.text.includes('clocked_in') && !j.isError, 'Factorial: lectura por MCP (respuesta SSE)');
+r = await req('/api/factorial/call', { method: 'POST', cookie, body: { name: 'clock_in', arguments: {} } }); j = await r.json();
+ok(r.status === 428 && j.code === 'confirm', 'Factorial: fichar sin confirmación → 428, no se ejecuta');
+r = await req('/api/factorial/call', { method: 'POST', cookie, body: { name: 'clock_in', arguments: {}, confirm: true } }); j = await r.json();
+ok(r.status === 200 && j.text.includes('Entrada fichada'), 'Factorial: fichar con confirmación');
+r = await req('/api/factorial/call', { method: 'POST', cookie, body: { name: 'borrar_todo', arguments: {}, confirm: true } }); ok(r.status === 404, 'Factorial: acción que no ofrece el servidor → 404');
+const fcalls = await (await fetch(M + '/__factorial')).json(); ok(fcalls.length === 2 && fcalls.filter((c) => c.name === 'clock_in').length === 1, 'Factorial: solo 1 fichaje llegó al servidor');
+j = await (await req('/api/audit', { cookie })).json(); ok(j.items.some((a) => a.action === 'factorial.call' && a.target === 'clock_in'), 'Factorial: fichaje en el registro de auditoría');
+j = await (await fetch(B + '/api/health')).json(); ok(j.factorial === true && !JSON.stringify(j).includes('FAT-'), 'health: Factorial conectado sin exponer tokens');
+r = await req('/api/factorial/disconnect', { method: 'POST', cookie, body: {} }); j = await (await req('/api/factorial/status', { cookie })).json(); ok(j.connected === false, 'Factorial: desconectar borra los tokens');
+
 // 7. Seguridad
 r = await fetch(B + '/api/sync/run', { method: 'POST', headers: { Cookie: cookie, Origin: 'https://evil.example', 'Content-Type': 'application/json' }, body: '{}' }); ok(r.status === 403, 'CSRF: origen ajeno → 403');
 r = await req('/api/approvals/execute', { method: 'POST', cookie, body: { id: 'a', accion: 'x', datos: {} } }); j = await r.json(); ok(r.status === 422 && j.code === 'no-op', 'aprobación sin op → 422');

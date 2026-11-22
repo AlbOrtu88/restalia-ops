@@ -1,6 +1,6 @@
 // Service worker: guarda la app en el dispositivo para abrirla sin conexión.
 // Solo cachea los archivos propios de la app. Nunca cachea llamadas al backend.
-const VERSION = 'restalia-v0.6.4';
+const VERSION = 'restalia-v0.7.0';
 const SHELL = [
   './',
   "./css/app.css",
@@ -35,6 +35,7 @@ const SHELL = [
   "./js/modules/comunicaciones.js",
   "./js/modules/configuracion.js",
   "./js/modules/documentacion.js",
+  "./js/modules/factorial.js",
   "./js/modules/incidencias.js",
   "./js/modules/informes.js",
   "./js/modules/inicio.js",

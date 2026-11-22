@@ -20,13 +20,14 @@ import comunicaciones from './modules/comunicaciones.js';
 import informes from './modules/informes.js';
 import automatizaciones, { runLocalAutomations } from './modules/automatizaciones.js';
 import aprobaciones from './modules/aprobaciones.js';
+import factorial from './modules/factorial.js';
 import configuracion from './modules/configuracion.js';
 
-const MODULES = [inicio, asistente, agenda, tareas, locales, visitas, auditorias, incidencias, proyectos, documentacion, comunicaciones, informes, automatizaciones, aprobaciones, configuracion];
+const MODULES = [inicio, asistente, agenda, tareas, locales, visitas, auditorias, incidencias, proyectos, documentacion, comunicaciones, informes, automatizaciones, aprobaciones, factorial, configuracion];
 const BY_ID = Object.fromEntries(MODULES.map((m) => [m.id, m]));
 const GROUPS = [
   { label: null, ids: ['inicio', 'asistente'] },
-  { label: 'nav.trabajo', ids: ['agenda', 'tareas', 'aprobaciones'] },
+  { label: 'nav.trabajo', ids: ['agenda', 'tareas', 'factorial', 'aprobaciones'] },
   { label: 'nav.operaciones', ids: ['locales', 'visitas', 'auditorias', 'incidencias', 'proyectos'] },
   { label: 'nav.informacion', ids: ['documentacion', 'comunicaciones', 'informes'] },
   { label: 'nav.sistema', ids: ['automatizaciones', 'configuracion'] },

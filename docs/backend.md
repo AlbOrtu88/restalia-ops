@@ -102,7 +102,7 @@ Sin hacer nada, el asistente usa Cloudflare Workers AI (Llama 3.3 70B), que proc
 
 ## 6. Endpoints
 
-`GET /api/health` · `GET /api/auth/login[?teams=1]` · `GET /api/auth/callback` · `GET /api/auth/status` · `POST /api/auth/key` · `POST /api/auth/logout` · `POST /api/auth/disconnect` · `GET /api/data?since=` · `GET /api/sync/status` · `POST /api/sync/run {source?, full?}` · `GET /api/notion/schema` · `GET /api/notion/:coleccion` · `GET /api/graph/mail[?q=&from=&since=]` · `GET /api/graph/calendar[?from=&to=]` · `GET /api/graph/teams/messages` · `GET /api/graph/files[?q=]` · `POST /api/approvals/execute` · `POST /api/ai/chat` · `POST /api/push/subscribe` · `GET /api/audit`.
+`GET /api/health` · `GET /api/auth/login[?teams=1]` · `GET /api/auth/callback` · `GET /api/auth/status` · `POST /api/auth/key` · `POST /api/auth/logout` · `POST /api/auth/disconnect` · `GET /api/data?since=` · `GET /api/sync/status` · `POST /api/sync/run {source?, full?}` · `GET /api/notion/schema` · `GET /api/notion/:coleccion` · `GET /api/graph/mail[?q=&from=&since=]` · `GET /api/graph/calendar[?from=&to=]` · `GET /api/graph/teams/messages` · `GET /api/graph/files[?q=]` · `POST /api/approvals/execute` · `POST /api/ai/chat` · `POST /api/push/subscribe` · `GET /api/audit` · `GET /api/factorial/status` · `GET /api/factorial/connect` · `GET /api/factorial/callback` · `GET /api/factorial/tools[?fresh=1]` · `POST /api/factorial/call {name, arguments, confirm}` · `POST /api/factorial/disconnect`.
 
 Todos salvo health y auth exigen sesión.
 
@@ -138,6 +138,17 @@ Con un ordenador con `wrangler` también vale: `cd worker && npx wrangler deploy
 - Coordenadas: el backend geocodifica la Dirección (+ Municipio) de cada local con **Nominatim de OpenStreetMap** (gratis, sin clave, máx. 1 consulta/s, User-Agent identificable). Lo hace poco a poco en cada cron (y en «Actualizar ahora»), unos 6 locales por ejecución, y guarda el resultado en la tabla `geocache` de D1. **No escribe nada en Notion.** Si cambia la dirección en Notion, se vuelve a geocodificar. Si la dirección no se encuentra y el local está en un centro comercial («CC …» en el nombre o la dirección), se busca el centro comercial por su nombre. Si tampoco aparece, se usa el centro del municipio (marcado como «aproximada») y se reintenta a los 7 días.
 - Mapa: Leaflet 1.9.4 (cdnjs) con teselas de OpenStreetMap, atribución incluida. Comparte filtros con la tabla. `GET /api/geo/status` resume cuántos locales están ubicados.
 - El Worker `restalia-ops-deployer` debe incluir `geo.js` en su lista de archivos.
+
+### Factorial (fichaje, vacaciones, tareas y gastos)
+
+- Usa el **servidor MCP oficial** de Factorial (`https://mcp.factorialhr.com`), no la API pública: no hace falta clave de API ni app OAuth de un administrador.
+- Al pulsar «Conectar con Factorial», el backend registra la app sola (registro dinámico de clientes, RFC 7591; queda en `vault.factorial_client`) y abre el inicio de sesión de Factorial con PKCE y `resource`. Alberto entra con **su** usuario; el token solo puede hacer lo que él ya puede hacer en Factorial. Tokens cifrados en `vault.factorial`, nunca en el navegador.
+- Permisos pedidos: `employees tasks time_off time_tracking company_holidays company_locations one:read one:write` (los de One solo sirven si el plan de Restalia incluye Factorial One).
+- La app lee la lista de acciones del servidor (`tools/list`, en caché 12 h) y busca por nombre las de fichar, vacaciones, tareas, compañeros y One. Todas las demás aparecen en «Todas las acciones», con formulario generado a partir de su esquema.
+- Las acciones que **cambian algo** (según la anotación `readOnlyHint` o, si falta, el nombre) exigen `confirm: true` (si no, 428) y quedan en el registro de auditoría (`factorial.call`).
+- Tickets de gastos: el servidor MCP no tiene herramienta de gastos. Las fotos se guardan en el dispositivo (IndexedDB) y «Subir a Factorial» las comparte con la hoja del iPhone (o las descarga) para subirlas en lote en Factorial (Mis gastos → Subir tickets); su OCR rellena cada gasto. Si hay Factorial One, se le puede pedir el borrador por texto.
+- Variable opcional para pruebas: `FACTORIAL_MCP_URL`.
+- El Worker `restalia-ops-deployer` debe incluir `factorial.js` en su lista de archivos.
 
 ## 8. Pruebas
 
