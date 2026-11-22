@@ -112,6 +112,8 @@ Desde el contenedor de Claude no se llega a `api.cloudflare.com`, así que el de
 1. Subir los cambios a la rama (o a `main`) y poner esa rama en la clave `ref` del KV `restalia-ops-deploy`.
 2. Esperar un minuto y publicar `restalia-ops-dev`; probar; publicar `restalia-ops`.
 
+**Automático desde GitHub:** el workflow `Desplegar backend` (`.github/workflows/deploy.yml`) publica `restalia-ops` en cada merge a `main` que toque `worker/`, y también se puede lanzar a mano (Actions → Desplegar backend → Run workflow). Necesita el secreto de GitHub `CLOUDFLARE_API_TOKEN` (token de Cloudflare con la plantilla «Editar Cloudflare Workers»). `keep_vars = true` en `wrangler.toml` conserva las variables puestas en el panel.
+
 Con un ordenador con `wrangler` también vale: `cd worker && npx wrangler deploy --env dev` (o `--env prod`).
 
 ## 7 bis. Comprobar que Notion llega de verdad a la app

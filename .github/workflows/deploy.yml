@@ -1,0 +1,48 @@
+# Despliegue del backend (Cloudflare Worker «restalia-ops») en cada cambio de main que toque worker/.
+# Usa un token de Cloudflare con permiso SOLO para editar Workers, guardado como secreto de GitHub
+# (Settings → Secrets and variables → Actions → CLOUDFLARE_API_TOKEN). Nunca va en el repo ni en el chat.
+# Los secretos y las variables puestas en el panel de Cloudflare se conservan (keep_vars en wrangler.toml).
+name: Desplegar backend
+
+on:
+  push:
+    branches: [main]
+    paths: ['worker/**', '.github/workflows/deploy.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Publicar restalia-ops (prod)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+      - run: npm ci
+      - name: Publicar
+        run: npx wrangler deploy --env prod
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      - name: Comprobar que responde la versión nueva
+        run: |
+          want=$(grep -o "VERSION = '[0-9.]*'" src/index.js | grep -o "[0-9.]*")
+          for i in $(seq 1 10); do
+            got=$(curl -sf https://restalia-ops.hola-0d4.workers.dev/api/health | grep -o '"version":"[0-9.]*"' | grep -o "[0-9.]*" || true)
+            [ "$got" = "$want" ] && echo "Backend $got publicado" && exit 0
+            sleep 3
+          done
+          echo "El backend responde «$got» y se esperaba «$want»"; exit 1
