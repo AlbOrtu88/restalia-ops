@@ -14,68 +14,54 @@ const SECCIONES = {
   avisos: '/alerts/',
 };
 
-/** Locales asignados a Alberto en iFlares (pantalla «Chequeos»), con su id. Leído el 27-nov-2026. */
+/**
+ * Cartera de Alberto (25 locales) con su id en iFlares: [código Restalia, nombre en iFlares, id en iFlares].
+ * Nombres cruzados el 27-nov-2026 con la lista completa de locales de iFlares (24 iguales; San Miguel del Camino
+ * figura en iFlares como «(FUENCARRAL)»). Si cambia la cartera, se actualiza aquí.
+ */
 export const IFLARES_LOCALES = [
-  [2529, '100M AV DE CARLOS III EL NOBLE 38 (PAMPLONA)'],
-  [3106, '100M BLUE CALLE DEL PRINCIPE 18 (MADRID)'],
-  [3943, '100M BLUE CALLE MADRID 29 (GETAFE)'],
-  [2666, '100M BLUE CC MAGIC BADALONA (BADALONA - BARCELONA)'],
-  [2700, '100M BLUE CC MOGAN MALL (CANARIAS)'],
-  [3154, '100M BLUE CC PARQUE CORREDOR (TORREJON DE ARDOZ - MADRID)'],
-  [5755, '100M C/ LA MARINA 56 (BARCELONA)'],
-  [2391, '100M CALLE BRAVO MURILLO 377 (MADRID)'],
-  [2392, '100M CALLE BRAVO MURILLO 98 (MADRID)'],
-  [4145, '100M CC 7 PALMAS (LAS PALMAS DE GRAN CANARIA)'],
-  [2472, '100M CC BONAIRE (ALDAIA - VALENCIA)'],
-  [2370, '100M CC HERON CITY (BARCELONA)'],
-  [3952, '100M CC ITAROA (HUARTE - NAVARRA)'],
-  [2522, '100M CC MERIDIANO (QUIOSCO) SANTA CRUZ DE TENERIFE'],
-  [2422, '100M CC PARQUE RIVAS (RIVAS - VACIAMADRID)'],
-  [2487, '100M CC PLAZA MAYOR (XATIVA)'],
-  [2428, '100M CC RIVAS FUTURA (RIVAS-VACIAMADRID)'],
-  [2546, '100M CC VEGA PLAZA (MOLINA DE SEGURA - MURCIA)'],
-  [2527, '100M LOGROÑO'],
-  [2435, '100M METROPOLITANO (MADRID)'],
-  [2625, '100M PARQUE DELFIM GUIMARAES 9 (AMADORA)'],
-  [2812, 'CLS CC MERIDIANO (QUIOSCO) STA CRUZ DE TENERIFE'],
-  [2761, 'MLS CALLE DE CARRETAS 14 (JACINTO BENAVENTE - MADRID)'],
-  [2772, 'MLS CC OCIOPIA (ORIHUELA-ALICANTE)'],
-  [6009, 'MLS CC PASEO DEL MAR L-B09 (TORREVIEJA)'],
-  [2757, 'MLS RAMBLA JUST OLIVERAS 1 (HOSPITALET DE LLOBREGAT)'],
-  [2917, 'TGB CC BONAIRE (ALDAIA-VALENCIA)'],
-  [2900, 'TGB CC PARQUE CORREDOR (TORREJON DE ARDOZ - MADRID)'],
-  [2872, 'TGB GRAN VIA DE LAS CORTES CATALANAS 149 (BARCELONA)'],
-  [2974, 'TGB RUA DO LOUREIRO 26-32 (SAO BENTO - OPORTO)'],
+  ['0032', '100M CC EQUINOCCIO PARK (MAJADAHONDA)', 2411],
+  ['0039', '100M CC PLAZA NORTE 2 (SAN SEBASTIAN DE LOS REYES - MADRID)', 2425],
+  ['0052', '100M CC VIALIA (SALAMANCA)', 2366],
+  ['0105', '100M CC VALLSUR (VALLADOLID)', 2365],
+  ['0116', '100M CC LOS VALLES (COLLADO VILLALBA - MADRID)', 2419],
+  ['0240', '100M CC GRAN PLAZA 2 (MAJADAHONDA)', 2413],
+  ['0322', '100M CALLE ESTRADA 1 (AVILA)', 2360],
+  ['0330', '100M CALLE DE FERNANDO EL CATOLICO 84 (MADRID)', 2393],
+  ['0347', '100M PLAZA DEL VAL 6 (VALLADOLID)', 2367],
+  ['0417', '100M CALLE PRINCIPE CARLOS 40 (SANCHINARRO)', 2407],
+  ['0441', '100M VIA DE LAS DOS CASTILLAS 15 (POZUELO DE ALARCON)', 2451],
+  ['0544', '100M CC LA VAGUADA (MADRID)', 2418],
+  ['0581', '100M C/ FRANCOS RODRIGUEZ 69 (MADRID)', 4592],
+  ['0587', '100M C/ GRAN VIA 5 (MAJADAHONDA - MADRID)', 5410],
+  ['0614', '100M CALLE DE SAN MIGUEL DEL CAMINO 16 (FUENCARRAL - LAS TABLAS)', 5962],
+  ['0623', '100M PLAZA ESPAÑA (LAS ROZAS)', 6235],
+  ['3049', 'MLS CC CIUDAD TRES CANTOS (MADRID)', 2764],
+  ['3089', 'MLS CC MONTECARMELO (MADRID)', 4149],
+  ['BL0037', '100M BLUE CC EL VENTANAL DE LA SIERRA (COLMENAR VIEJO - MADRID)', 2672],
+  ['BL0082', '100M BLUE CC PLANETOCIO (COLLADO VILLALBA - MADRID)', 3155],
+  ['CLS2105', 'CLS CALLE CONCEPCION 1 (VALLADOLID)', 2792],
+  ['CLS2146', 'CLS CC LA VAGUADA (MADRID)', 2799],
+  ['TGB0001', 'TGB CC LA VAGUADA (MADRID)', 2896],
+  ['TGB0033', 'TGB CC PLANETOCIO (COLLADO VILLALBA)', 2902],
+  ['TGB0208', 'TGB CC CIUDAD TRES CANTOS (TRES CANTOS - MADRID)', 2890],
 ];
 
-// Prefijo de marca en iFlares → palabras con que puede aparecer la marca en Notion.
-const MARCAS = {
-  '100m': ['100', 'montaditos', '100m'],
-  mls: ['sureña', 'surena', 'mls', 'cls', 'cerveceria'],
-  cls: ['sureña', 'surena', 'mls', 'cls', 'cerveceria'],
-  tgb: ['tgb', 'good', 'burger'],
-};
-const VACIAS = new Set(['100m', 'mls', 'cls', 'tgb', 'blue', 'cc', 'c', 'calle', 'de', 'del', 'la', 'el', 'las', 'los', 'av', 'avenida', 'do', 'y', 'madrid', 'barcelona', 'valencia', 'quiosco', 'sta', 'santa', 'l']);
-const palabras = (t) => norm(t).replace(/[^a-z0-9ñ]+/g, ' ').split(' ').filter((w) => w && !VACIAS.has(w));
+const clave = (t) => norm(t).replace(/[^a-z0-9n]+/g, ' ').trim();
+const POR_CODIGO = new Map(IFLARES_LOCALES.map(([c, , id]) => [clave(c), id]));
+const POR_NOMBRE = new Map(IFLARES_LOCALES.map(([, n, id]) => [clave(n), id]));
 
-/** Busca el local de iFlares que corresponde a un local de la app (por marca y nombre/dirección). Devuelve el id o null. */
+/** Id en iFlares de un local de la app: por su código Restalia y, si no, por su nombre exacto. Si no es de la cartera, null. */
 export function iflaresIdFor(l) {
   if (!l) return null;
   if (l.iflaresId) return l.iflaresId;
-  const texto = [l.nombre, l.direccion, l.municipio || l.ciudad, l.marca].filter(Boolean).join(' ');
-  const mio = new Set(palabras(texto));
-  const marcaTxt = norm([l.marca, l.nombre].filter(Boolean).join(' '));
-  let best = null, bestScore = 0, second = 0;
-  for (const [id, nombre] of IFLARES_LOCALES) {
-    const pref = norm(nombre).split(' ')[0];
-    if (marcaTxt && !(MARCAS[pref] || []).some((w) => marcaTxt.includes(w))) continue;
-    const suyas = palabras(nombre);
-    // Los números (portal) pesan más: distinguen Bravo Murillo 98 de 377.
-    const score = suyas.reduce((s, w) => s + (mio.has(w) ? (/^\d+$/.test(w) ? 3 : 1) : 0), 0);
-    if (score > bestScore) { second = bestScore; bestScore = score; best = id; } else if (score > second) second = score;
+  const cod = l.codigo != null ? clave(String(l.codigo)) : '';
+  if (cod) {
+    if (POR_CODIGO.has(cod)) return POR_CODIGO.get(cod);
+    // Códigos numéricos que Notion pueda guardar sin ceros a la izquierda (32 → 0032).
+    if (/^\d+$/.test(cod) && POR_CODIGO.has(cod.padStart(4, '0'))) return POR_CODIGO.get(cod.padStart(4, '0'));
   }
-  // Exige al menos dos coincidencias y que no haya empate, para no abrir el local equivocado.
-  return bestScore >= 2 && bestScore > second ? best : null;
+  return POR_NOMBRE.get(clave(l.nombre || '')) ?? null;
 }
 
 /** Enlace a una sección general de iFlares. */
