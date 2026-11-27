@@ -3,6 +3,7 @@ import { icon, badge, demoBadge, sourceBadge, empty, pageHead, field, readForm, 
 import { esc, matches, fmtDateFull, fmtDateTime, fmtDate, relDay, isoLocal, isoDate, addDays, toDate, debounce } from '../core/utils.js';
 import { putMedia, hydrateMedia } from '../core/media.js';
 import { backendConfigured } from '../adapters/backend.js';
+import { iflaresLocalUrl } from '../core/iflares.js';
 
 const RESULTADOS = ['Satisfactoria', 'Con incidencias', 'Crítica'];
 const MOTIVOS = ['Visita rutinaria', 'Visita sin aviso', 'Seguimiento de incidencia', 'Visita de calidad', 'Preparación de auditoría', 'Visita de apertura', 'Otro'];
@@ -136,6 +137,7 @@ function report(view, id) {
     <div class="page-head"><div class="titles"><p class="xs subtle" style="text-transform:uppercase;letter-spacing:.06em">Informe de visita · ${esc(v.id)}</p><div class="row wrap"><h1>${esc(l.nombre || '—')}</h1>${demoBadge(v)}${sourceBadge(v)}</div><p>${fmtDateTime(v.fecha)} · ${esc(v.motivo)} · ${esc(v.responsable)}</p></div>
       <div class="btn-row no-print">
         ${!v.demo ? `<button class="btn sm" data-notion ${proposed ? 'disabled' : ''}>${icon('upload', 'sm')}${proposed ? 'Propuesto a Notion' : 'Proponer a Notion'}</button>` : ''}
+        <a class="btn sm" href="${iflaresLocalUrl(l)}" target="_blank" rel="noopener" title="Abre iFlares para registrar la visita allí">${icon('external', 'sm')}Registrar en iFlares</a>
         <button class="btn sm" data-print>${icon('printer', 'sm')}PDF</button>
         ${!v.demo ? `<button class="btn sm danger" data-del aria-label="Eliminar">${icon('trash', 'sm')}</button>` : ''}
       </div></div>
