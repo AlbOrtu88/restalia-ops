@@ -3,7 +3,7 @@ import { icon, badge, demoBadge, empty, pageHead, seg, bindSeg, demoNotice, on, 
 import { esc, matches, norm, fmtDate, fmtDateFull, fmtDateTime, relDay, isOverdue, toDate, debounce } from '../core/utils.js';
 import { state as syncState, onSync, syncNow } from '../core/sync.js';
 import { backendConfigured } from '../adapters/backend.js';
-import { iflaresLocalUrl } from '../core/iflares.js';
+import { iflaresButton } from '../core/iflares.js';
 
 const st = { view: 'tabla', q: '', marca: '', estado: '', municipio: '', zona: '', responsable: '', tab: 'resumen' };
 const SIN_ESTADO = '__sin_estado';
@@ -349,7 +349,7 @@ function detail(view, id) {
         <dt>Origen</dt><dd>${l.demo ? 'Ejemplo DEMO' : isNotion ? `Notion · Locales${l.url ? ` · <a href="${esc(l.url)}" target="_blank" rel="noopener">Abrir en Notion ${icon('external', 'sm')}</a>` : ''}` : 'App'}</dd>
         ${isNotion && l.source?.syncedAt ? `<dt>Sincronizado</dt><dd class="small subtle">${relDay(l.source.syncedAt)}</dd>` : ''}
       </dl>
-      <div class="btn-row" style="margin-top:16px"><a class="btn primary sm" href="#/visitas/nueva/${l.id}">${icon('pin', 'sm')}Nueva visita</a><a class="btn sm" href="#/incidencias/nueva/${l.id}">${icon('alert', 'sm')}Incidencia</a><a class="btn sm" href="#/auditorias/nueva/${l.id}">${icon('audit', 'sm')}Auditoría</a><a class="btn sm" href="${iflaresLocalUrl(l)}" target="_blank" rel="noopener">${icon('external', 'sm')}Abrir en iFlares</a>${isNotion ? `<button class="btn sm" data-propose>${icon('upload', 'sm')}Proponer cambio</button>` : ''}</div></div>
+      <div class="btn-row" style="margin-top:16px"><a class="btn primary sm" href="#/visitas/nueva/${l.id}">${icon('pin', 'sm')}Nueva visita</a><a class="btn sm" href="#/incidencias/nueva/${l.id}">${icon('alert', 'sm')}Incidencia</a><a class="btn sm" href="#/auditorias/nueva/${l.id}">${icon('audit', 'sm')}Auditoría</a>${iflaresButton(l, 'operativa')}${iflaresButton(l, 'formativa')}${isNotion ? `<button class="btn sm" data-propose>${icon('upload', 'sm')}Proponer cambio</button>` : ''}</div></div>
     </div>`,
     visitas: `<div class="card"><div class="list">${visitas.map((v) => li(`#/visitas/${v.id}`, 'pin', 'green', `${esc(v.motivo)} ${demoBadge(v)}`, `${fmtDateFull(v.fecha)} · ${esc(v.responsable)}`, badge(v.resultado))).join('') || empty('Sin visitas registradas', 'pin')}</div></div>`,
     incidencias: `<div class="card"><div class="list">${inc.map((i) => li(`#/incidencias/${i.id}`, 'alert', 'red', `<span class="mono">${esc(i.id)}</span> ${esc(i.titulo)} ${demoBadge(i)}`, `${esc(i.categoria)} · ${fmtDate(i.fecha)}`, badge(i.estado))).join('') || empty('Sin incidencias', 'alert')}</div></div>`,

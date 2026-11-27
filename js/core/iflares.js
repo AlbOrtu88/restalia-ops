@@ -3,7 +3,8 @@
 // en la web con la sesión que Alberto ya tenga iniciada.
 // Rutas comprobadas el 27-nov-2026 con la sesión de Alberto: «Chequeos» = /processes y cada local = /processes/<id>.
 // Si iFlares cambia las rutas o los locales asignados, basta tocar este archivo.
-import { norm } from './utils.js';
+import { norm, esc } from './utils.js';
+import { toast, icon } from './ui.js';
 
 export const IFLARES_BASE = 'https://app.iflares.com';
 
@@ -71,4 +72,40 @@ export const iflaresUrl = (seccion = 'inicio') => IFLARES_BASE + (SECCIONES[secc
 export function iflaresLocalUrl(l) {
   const id = iflaresIdFor(l);
   return id ? `${IFLARES_BASE}/processes/${encodeURIComponent(id)}` : iflaresUrl('chequeos');
+}
+
+/** Nombre del local tal como aparece en iFlares (para buscarlo en «Lanzamiento manual»). */
+export function iflaresNombre(l) {
+  const id = iflaresIdFor(l);
+  return IFLARES_LOCALES.find((x) => x[2] === id)?.[1] || null;
+}
+
+/** Tipos de visita que Alberto crea como asesor (familia «VISITAS OPS» del lanzamiento manual de iFlares). */
+export const IFLARES_VISITAS = { operativa: 'VISITA OPS', formativa: 'VISITA FORMATIVA' };
+/** Tipo de visita de iFlares según el motivo de una visita de la app (formación → formativa; el resto, operativa). */
+export const tipoVisita = (motivo) => (/forma/i.test(motivo || '') ? 'formativa' : 'operativa');
+
+/**
+ * Botón para registrar una visita en iFlares. iFlares no deja abrir el «Lanzamiento manual» ya relleno, así que
+ * abre los chequeos del local y copia su nombre de iFlares; allí: + verde → Manual → familia VISITAS OPS →
+ * proceso VISITA OPS o VISITA FORMATIVA → pegar el local.
+ */
+export function iflaresButton(l, tipo = 'operativa', label = null, cls = 'btn sm') {
+  const nombre = iflaresNombre(l);
+  const proceso = IFLARES_VISITAS[tipo] || IFLARES_VISITAS.operativa;
+  const texto = label || (tipo === 'formativa' ? 'Visita formativa en iFlares' : 'Visita operativa en iFlares');
+  return `<a class="${cls}" href="${iflaresLocalUrl(l)}" target="_blank" rel="noopener" data-iflares-nombre="${esc(nombre || '')}" data-iflares-proceso="${esc(proceso)}" title="Abre iFlares. Luego: + verde → Manual → ${esc(proceso)} → elige el local">${icon('external', 'sm')}${esc(texto)}</a>`;
+}
+
+// Al pulsar el botón: copia el nombre del local y recuerda los pasos. El enlace se abre igualmente.
+if (typeof document !== 'undefined') {
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest?.('[data-iflares-nombre]');
+    if (!a) return;
+    const { iflaresNombre: nombre, iflaresProceso: proceso } = a.dataset;
+    const pasos = `En iFlares: + verde → Manual → ${proceso}`;
+    if (!nombre) { toast(`${pasos} → elige el local`); return; }
+    try { navigator.clipboard?.writeText(nombre).catch(() => {}); } catch { /* sin portapapeles */ }
+    toast(`Local copiado. ${pasos} → pega «${nombre}» en Local`);
+  });
 }
